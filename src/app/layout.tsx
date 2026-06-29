@@ -84,9 +84,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      // Google Translate CORS failures corrupt the DOM and trigger
+      // React removeChild crashes even with <span> wrappers. Blocking
+      // translation entirely prevents that incompatibility.
+      translate="no"
       data-theme={DEFAULT_THEME}
       data-mode={DEFAULT_MODE}
-      className={`${inter.variable} h-full antialiased`}
+      className={`notranslate ${inter.variable} h-full antialiased`}
       // The `theme-boot` script below rewrites `data-theme` and
       // `data-mode` on <html> from localStorage before React hydrates,
       // so for any non-default choice the client DOM intentionally

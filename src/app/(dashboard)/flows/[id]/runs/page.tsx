@@ -260,7 +260,7 @@ function RunCard({
             {run.reprompt_count > 0 && (
               <span>· {run.reprompt_count} re-prompts</span>
             )}
-            {duration && <span>· ran for {duration}</span>}
+            {duration ? <span>· ran for {duration}</span> : null}
           </div>
         </div>
       </button>

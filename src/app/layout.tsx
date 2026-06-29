@@ -4,6 +4,7 @@ import Script from "next/script";
 import "./globals.css";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { ThemedToaster } from "@/components/themed-toaster";
+import { ErrorBoundary } from "@/components/error-boundary";
 import {
   DEFAULT_MODE,
   DEFAULT_THEME,
@@ -104,7 +105,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full bg-background text-foreground font-sans">
         <ThemeProvider>
-          {children}
+          <ErrorBoundary>{children}</ErrorBoundary>
           <ThemedToaster />
         </ThemeProvider>
       </body>

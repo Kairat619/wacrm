@@ -51,8 +51,8 @@ export function ValidationPanel() {
         ) : (
           <CircleAlert className="h-4 w-4 text-amber-400" />
         )}
-        {errors.length} error{errors.length === 1 ? "" : "s"},{" "}
-        {warnings.length} warning{warnings.length === 1 ? "" : "s"}
+        <span>{errors.length} error{errors.length === 1 ? "" : "s"},{" "}
+        {warnings.length} warning{warnings.length === 1 ? "" : "s"}</span>
       </div>
       <div className="flex flex-col gap-1">
         {issues.map((i, ix) => (

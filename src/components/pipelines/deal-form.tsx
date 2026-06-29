@@ -252,7 +252,7 @@ export function DealForm({
         <div className="flex h-full flex-col">
           <SheetHeader className="border-b border-border/50 p-4">
             <SheetTitle className="text-popover-foreground">
-              {deal ? "Edit Deal" : "New Deal"}
+              <span>{deal ? "Edit Deal" : "New Deal"}</span>
             </SheetTitle>
           </SheetHeader>
 
@@ -440,7 +440,7 @@ export function DealForm({
                 disabled={saving || !title.trim() || !contactId || !stageId}
                 className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                {saving ? "Saving..." : deal ? "Save Changes" : "Create Deal"}
+                <span>{saving ? "Saving..." : deal ? "Save Changes" : "Create Deal"}</span>
               </Button>
             </div>
 
@@ -463,7 +463,7 @@ export function DealForm({
                       disabled={deleting}
                       className="rounded bg-red-600 px-2 py-1 font-medium text-white hover:bg-red-700 disabled:opacity-50"
                     >
-                      {deleting ? "Deleting..." : "Confirm"}
+                      <span>{deleting ? "Deleting..." : "Confirm"}</span>
                     </button>
                   </div>
                 </div>

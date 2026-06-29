@@ -450,7 +450,7 @@ function SendTemplateFields({
         })}
         {current && !hasMatch && (
           <option value={current}>
-            {templateName} ({language || "unknown"}) — not in approved list
+            <span>{templateName} ({language || "unknown"})</span> — not in approved list
           </option>
         )}
       </select>
@@ -581,7 +581,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
           className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {isEditing ? "Save" : "Save Draft"}
+          <span>{isEditing ? "Save" : "Save Draft"}</span>
         </Button>
       </header>
 
@@ -885,7 +885,7 @@ function StepRenderer({
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                {isCondition ? "Condition" : step.step_type === "wait" ? "Wait" : "Action"}
+                <span>{isCondition ? "Condition" : step.step_type === "wait" ? "Wait" : "Action"}</span>
               </div>
               <div className="truncate text-sm font-medium text-foreground">{meta.label}</div>
               <div className="truncate text-[11px] text-muted-foreground">{previewFor(step)}</div>

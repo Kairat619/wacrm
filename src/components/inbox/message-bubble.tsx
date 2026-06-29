@@ -185,7 +185,7 @@ function MessageContent({ message }: { message: Message }) {
         >
           <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
           <span className="truncate">
-            {message.content_text || "Document"}
+<span>{message.content_text || "Document"}</span>
           </span>
         </a>
       );
@@ -209,7 +209,7 @@ function MessageContent({ message }: { message: Message }) {
       return (
         <div className="flex items-center gap-2 text-sm">
           <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span>{message.content_text || "Location shared"}</span>
+          <span><span>{message.content_text || "Location shared"}</span></span>
         </div>
       );
 
@@ -226,7 +226,7 @@ function MessageContent({ message }: { message: Message }) {
             Button reply
           </span>
           <p className="whitespace-pre-wrap break-words text-sm">
-            {message.content_text || "[Interactive reply]"}
+            <span>{message.content_text || "[Interactive reply]"}</span>
           </p>
         </div>
       );
@@ -235,7 +235,7 @@ function MessageContent({ message }: { message: Message }) {
     default:
       return (
         <p className="whitespace-pre-wrap break-words text-sm">
-          {message.content_text || "[Unsupported message type]"}
+          <span>{message.content_text || "[Unsupported message type]"}</span>
         </p>
       );
   }

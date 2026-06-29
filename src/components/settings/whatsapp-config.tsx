@@ -428,7 +428,7 @@ export function WhatsAppConfig() {
               <XCircle className="size-4 text-red-500" />
             )}
             <AlertTitle className="text-foreground mb-0">
-              {connectionStatus === 'connected' ? 'Credentials valid' : 'Not Connected'}
+              <span>{connectionStatus === 'connected' ? 'Credentials valid' : 'Not Connected'}</span>
             </AlertTitle>
           </div>
           <AlertDescription className="text-muted-foreground">
@@ -518,7 +518,7 @@ export function WhatsAppConfig() {
                 <p className="font-medium text-foreground">
                   Diagnostic — last run: {' '}
                   <span className={registrationProbe.live ? 'text-emerald-400' : 'text-amber-400'}>
-                    {registrationProbe.live ? 'live' : 'not live'}
+                    <span>{registrationProbe.live ? 'live' : 'not live'}</span>
                   </span>
                 </p>
                 <ul className="space-y-0.5 text-muted-foreground">

@@ -231,7 +231,7 @@ export function PipelineSettings({
                 disabled={deleting}
                 className="bg-red-600 text-white hover:bg-red-700"
               >
-                {deleting ? "Deleting..." : "Delete Pipeline"}
+                <span>{deleting ? "Deleting..." : "Delete Pipeline"}</span>
               </Button>
             </div>
           </div>
@@ -353,7 +353,7 @@ export function PipelineSettings({
                 disabled={saving || !name.trim()}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                {saving ? "Saving..." : "Save Changes"}
+                <span>{saving ? "Saving..." : "Save Changes"}</span>
               </Button>
             </DialogFooter>
           </>

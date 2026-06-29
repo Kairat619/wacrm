@@ -137,7 +137,7 @@ export function Step4ScheduleSend({
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Language</p>
-            <p className="text-foreground">{template.language ?? 'en_US'}</p>
+            <p className="text-foreground"><span>{template.language ?? 'en_US'}</span></p>
           </div>
         </div>
       </div>

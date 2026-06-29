@@ -313,7 +313,7 @@ export function MembersTab() {
                 {counts.offline} offline
               </span>
               <span className="text-muted-foreground/70">
-                · {members.length} member{members.length === 1 ? '' : 's'}
+                <span>· {members.length} member{members.length === 1 ? '' : 's'}</span>
               </span>
             </div>
           );
@@ -381,7 +381,7 @@ export function MembersTab() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="truncate text-sm font-medium text-foreground">
-                          {member.full_name || 'Unnamed'}
+                          <span>{member.full_name || 'Unnamed'}</span>
                         </span>
                         {isSelf && (
                           <Badge className="bg-muted text-muted-foreground border-border text-[10px] uppercase tracking-wide">
@@ -524,7 +524,7 @@ export function MembersTab() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-foreground">
-                            {inv.label || 'Untitled invite'}
+                            <span>{inv.label || 'Untitled invite'}</span>
                           </span>
                           <span
                             className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${inviteRoleMeta.className}`}
@@ -582,7 +582,7 @@ export function MembersTab() {
             <DialogDescription className="text-muted-foreground">
               Remove{' '}
               <span className="font-medium text-muted-foreground">
-                {removingMember?.full_name || 'this teammate'}
+                <span>{removingMember?.full_name || 'this teammate'}</span>
               </span>{' '}
               from the account? They&apos;ll be signed out of this account
               and given a fresh personal account on their next sign-in. Their

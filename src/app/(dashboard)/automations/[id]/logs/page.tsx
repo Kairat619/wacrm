@@ -127,11 +127,11 @@ export default function AutomationLogsPage({
                   <StatusBadge status={log.status} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium text-foreground">
-                      {log.contact?.name ?? log.contact?.phone ?? "Unknown contact"}
+                      <span>{log.contact?.name ?? log.contact?.phone ?? "Unknown contact"}</span>
                     </div>
                     <div className="truncate text-xs text-muted-foreground">
-                      {log.trigger_event} · {log.steps_executed?.length ?? 0} step
-                      {log.steps_executed?.length === 1 ? "" : "s"}
+                      <span>{log.trigger_event} · {log.steps_executed?.length ?? 0} step
+                      {log.steps_executed?.length === 1 ? "" : "s"}</span>
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground">

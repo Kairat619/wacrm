@@ -495,7 +495,7 @@ export function TemplateManager() {
               title="Pull approved templates from your Meta WhatsApp Business Account"
             >
               <RefreshCw className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Syncing…' : 'Sync from Meta'}
+              <span>{syncing ? 'Syncing…' : 'Sync from Meta'}</span>
             </Button>
             <Button onClick={openCreate}>
               <Plus className="size-4" />
@@ -641,7 +641,7 @@ export function TemplateManager() {
         <DialogContent className="bg-popover border-border sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-popover-foreground">
-              {editingId ? 'Edit Message Template' : 'New Message Template'}
+              <span>{editingId ? 'Edit Message Template' : 'New Message Template'}</span>
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
               {editingId
@@ -1073,12 +1073,12 @@ export function TemplateManager() {
               {submitting ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  {editingId ? 'Saving…' : 'Submitting…'}
+                  <span>{editingId ? 'Saving…' : 'Submitting…'}</span>
                 </>
               ) : editingId ? (
-                'Save & Resubmit'
+                <span>Save & Resubmit</span>
               ) : (
-                'Submit for Approval'
+                <span>Submit for Approval</span>
               )}
             </Button>
           </DialogFooter>

@@ -279,7 +279,7 @@ export default function FlowsPage() {
                         {t.description}
                       </span>
                       <span className="mt-auto border-t border-border pt-2 text-[11px] text-muted-foreground">
-                        {t.node_count} {t.node_count === 1 ? "node" : "nodes"}
+                        <span>{t.node_count} {t.node_count === 1 ? "node" : "nodes"}</span>
                       </span>
                     </button>
                   );
@@ -399,7 +399,7 @@ function FlowCard({
       <div className="mt-4 flex items-center gap-3 text-[11px] text-muted-foreground">
         <span className="inline-flex items-center gap-1">
           <MessageSquare className="h-3 w-3" />
-          {flow.execution_count} {flow.execution_count === 1 ? "run" : "runs"}
+          <span>{flow.execution_count} {flow.execution_count === 1 ? "run" : "runs"}</span>
         </span>
       </div>
 

@@ -495,9 +495,9 @@ export function ImportModal({
                   {tagStats.rowsWithTags > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-muted/90 px-2 py-0.5 text-[11px] text-muted-foreground">
                       <Tag className="text-primary/80 size-3" />
-                      {tagStats.unique} tag{tagStats.unique !== 1 ? 's' : ''} ·{' '}
+                      <span>{tagStats.unique} tag{tagStats.unique !== 1 ? 's' : ''} ·{' '}
                       {tagStats.rowsWithTags} contact
-                      {tagStats.rowsWithTags !== 1 ? 's' : ''}
+                      {tagStats.rowsWithTags !== 1 ? 's' : ''}</span>
                     </span>
                   )}
                 </div>
@@ -579,8 +579,8 @@ export function ImportModal({
 
               {parsedRows.length > PREVIEW_LIMIT && (
                 <p className="text-center text-[11px] text-muted-foreground">
-                  + {parsedRows.length - PREVIEW_LIMIT} more row
-                  {parsedRows.length - PREVIEW_LIMIT !== 1 ? 's' : ''} not shown
+                  <span>+ {parsedRows.length - PREVIEW_LIMIT} more row
+                  {parsedRows.length - PREVIEW_LIMIT !== 1 ? 's' : ''} not shown</span>
                 </p>
               )}
             </div>
@@ -593,26 +593,26 @@ export function ImportModal({
                 {result.imported > 0 && (
                   <div className="text-primary flex items-center gap-1.5 text-sm">
                     <CheckCircle className="size-4 shrink-0" />
-                    {result.imported} imported
+                    <span>{result.imported} imported</span>
                   </div>
                 )}
                 {result.tagsAssigned > 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-cyan-400">
                     <CheckCircle className="size-4 shrink-0" />
-                    {result.tagsAssigned} tag
-                    {result.tagsAssigned !== 1 ? 's' : ''} assigned
+                    <span>{result.tagsAssigned} tag
+                    {result.tagsAssigned !== 1 ? 's' : ''} assigned</span>
                   </div>
                 )}
                 {result.skipped > 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-amber-400">
                     <AlertTriangle className="size-4 shrink-0" />
-                    {result.skipped} skipped
+                    <span>{result.skipped} skipped</span>
                   </div>
                 )}
                 {result.failed > 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-red-400">
                     <XCircle className="size-4 shrink-0" />
-                    {result.failed} failed
+                    <span>{result.failed} failed</span>
                   </div>
                 )}
               </div>
@@ -627,7 +627,7 @@ export function ImportModal({
             onClick={() => handleOpenChange(false)}
             className="border-border text-muted-foreground hover:bg-muted"
           >
-            {result ? 'Close' : 'Cancel'}
+            <span>{result ? 'Close' : 'Cancel'}</span>
           </Button>
           {!result && (
             <Button
@@ -637,8 +637,8 @@ export function ImportModal({
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {importing && <Loader2 className="size-4 animate-spin" />}
-              Import {parsedRows.length > 0 ? parsedRows.length : ''} contact
-              {parsedRows.length !== 1 ? 's' : ''}
+              <span>Import {parsedRows.length > 0 ? parsedRows.length : ''} contact
+              {parsedRows.length !== 1 ? 's' : ''}</span>
             </Button>
           )}
         </DialogFooter>

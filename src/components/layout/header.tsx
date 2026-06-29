@@ -99,7 +99,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
         >
           <div className="px-2 py-1.5">
             <p className="truncate text-sm font-medium text-foreground">
-              {profile?.full_name ?? "User"}
+<span>{profile?.full_name ?? "User"}</span>
             </p>
             <p className="truncate text-xs text-muted-foreground">
               {profile?.email ?? ""}

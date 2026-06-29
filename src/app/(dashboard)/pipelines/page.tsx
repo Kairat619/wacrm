@@ -455,7 +455,7 @@ export default function PipelinesPage() {
               disabled={creating || !newPipelineName.trim()}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {creating ? "Creating..." : "Create Pipeline"}
+              <span>{creating ? "Creating..." : "Create Pipeline"}</span>
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -123,7 +123,7 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
           <footer className="flex items-center justify-between border-t border-border px-5 py-3 text-xs">
             <span className="text-muted-foreground tabular-nums">
               Showing {visible.length} of {totalLoaded}
-              {totalLoaded === 50 ? '+' : ''}
+              <span>{totalLoaded === 50 ? '+' : ''}</span>
             </span>
             <div className="flex items-center gap-1">
               <span className="mr-1 text-muted-foreground">Show</span>

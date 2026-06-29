@@ -533,7 +533,7 @@ function NodeConfigWithAdvanced({
           ) : (
             <ChevronDown className="h-3 w-3" />
           )}
-          {showAdvanced ? "Hide" : "Show"} advanced
+          <span>{showAdvanced ? "Hide" : "Show"} advanced</span>
         </button>
         {showAdvanced && (
           <div className="mt-3 flex flex-col gap-3">

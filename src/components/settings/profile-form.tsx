@@ -239,7 +239,7 @@ export function ProfileForm() {
                 disabled={saving}
               >
                 <Upload className="size-4" />
-                {currentAvatar ? 'Change photo' : 'Upload photo'}
+                <span>{currentAvatar ? 'Change photo' : 'Upload photo'}</span>
               </Button>
               {currentAvatar && (
                 <Button

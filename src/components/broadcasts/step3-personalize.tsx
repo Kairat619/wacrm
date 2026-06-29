@@ -343,7 +343,7 @@ export function Step3Personalize({
 
                   <div>
                     <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                      {mapping.type === 'static' ? 'Value' : 'Field'}
+                      <span>{mapping.type === 'static' ? 'Value' : 'Field'}</span>
                     </label>
                     {mapping.type === 'static' ? (
                       <Input

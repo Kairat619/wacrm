@@ -226,7 +226,7 @@ export function ContactForm({
       <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-popover-foreground">
-            {isEdit ? 'Edit Contact' : 'Add Contact'}
+            <span>{isEdit ? 'Edit Contact' : 'Add Contact'}</span>
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             {isEdit
@@ -378,7 +378,7 @@ export function ContactForm({
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {saving && <Loader2 className="size-4 animate-spin" />}
-              {isEdit ? 'Update' : 'Create'}
+              <span>{isEdit ? 'Update' : 'Create'}</span>
             </Button>
           </DialogFooter>
         </form>

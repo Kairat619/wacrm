@@ -78,7 +78,7 @@ function LoginPageInner() {
             )}
           </div>
           <CardTitle className="text-xl text-foreground">
-            {inviteToken ? "Sign in to accept" : "Welcome back"}
+            <span>{inviteToken ? "Sign in to accept" : "Welcome back"}</span>
           </CardTitle>
           <CardDescription className="text-muted-foreground">
             {inviteToken
@@ -137,7 +137,7 @@ function LoginPageInner() {
               disabled={loading}
               className="mt-2 h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              {loading ? "Signing in..." : "Sign in"}
+              <span>{loading ? "Signing in..." : "Sign in"}</span>
             </Button>
           </form>
 

@@ -199,7 +199,7 @@ export function InviteMemberDialog({
                 <span className="font-medium text-muted-foreground">{result.role}</span>
                 . The link is valid for{' '}
                 <span className="font-medium text-muted-foreground">
-                  {result.expiresInDays} day{result.expiresInDays === 1 ? '' : 's'}
+                  <span>{result.expiresInDays} day{result.expiresInDays === 1 ? '' : 's'}</span>
                 </span>
                 .
               </DialogDescription>

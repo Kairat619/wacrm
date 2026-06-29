@@ -315,7 +315,7 @@ function AutomationCard({
               {meta.label}
             </span>
             <span className="tabular-nums">
-              {automation.execution_count} run{automation.execution_count === 1 ? "" : "s"}
+              <span>{automation.execution_count} run{automation.execution_count === 1 ? "" : "s"}</span>
             </span>
             <span aria-hidden>·</span>
             <span>last {formatRelative(automation.last_executed_at)}</span>

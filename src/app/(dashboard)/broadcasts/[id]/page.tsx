@@ -254,7 +254,7 @@ export default function BroadcastDetailPage() {
   if (error || !broadcast) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-2">
-        <p className="text-sm text-red-400">{error ?? 'Broadcast not found'}</p>
+        <p className="text-sm text-red-400"><span>{error ?? 'Broadcast not found'}</span></p>
         <Button variant="outline" onClick={() => router.push('/broadcasts')}>
           Back to Broadcasts
         </Button>
@@ -325,7 +325,7 @@ export default function BroadcastDetailPage() {
               disabled={deleting}
               className="h-7 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
             >
-              {deleting ? 'Deleting…' : 'Confirm'}
+              <span>{deleting ? 'Deleting…' : 'Confirm'}</span>
             </Button>
           </div>
         ) : (

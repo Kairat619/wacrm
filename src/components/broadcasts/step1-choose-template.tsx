@@ -106,7 +106,7 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
                 </div>
                 <p className="line-clamp-3 text-xs text-muted-foreground">{template.body_text}</p>
                 <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                  <span>{template.language ?? 'en_US'}</span>
+                  <span><span>{template.language ?? 'en_US'}</span></span>
                   {/* Status is omitted on purpose — every template
                       shown here is already filtered to APPROVED,
                       so the chip carried no information. */}

@@ -20,8 +20,8 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "wacrm",
-    template: "%s — wacrm",
+    default: "almaCRM",
+    template: "%s — almaCRM",
   },
   description: "Self-hostable CRM template for WhatsApp.",
   robots: {
@@ -83,9 +83,15 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      // Google Translate (and other DOM-mutating translators) swap out
+      // text nodes that React owns. When React later tries to remove one
+      // of those nodes it crashes with "removeChild" inside
+      // commitDeletionEffectsOnFiber. Opting the document out of
+      // translation prevents that incompatibility entirely.
+      translate="no"
       data-theme={DEFAULT_THEME}
       data-mode={DEFAULT_MODE}
-      className={`${inter.variable} h-full antialiased`}
+      className={`notranslate ${inter.variable} h-full antialiased`}
       // The `theme-boot` script below rewrites `data-theme` and
       // `data-mode` on <html> from localStorage before React hydrates,
       // so for any non-default choice the client DOM intentionally

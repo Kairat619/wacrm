@@ -1575,7 +1575,12 @@
       "interactiveReply": "[Interactive reply]",
       "unsupported": "[Unsupported message type]",
       "aiBadge": "AI",
-      "aiBadgeTitle": "Sent automatically by the AI assistant"
+      "aiBadgeTitle": "Sent automatically by the AI assistant",
+      "imageAlt": "Изображение",
+      "viewImage": "Открыть в полном размере",
+      "expandVideo": "Развернуть видео",
+      "download": "Скачать",
+      "downloadFailed": "Не удалось скачать вложение"
     },
     "actions": {
       "reply": "Reply",
@@ -1672,7 +1677,10 @@
       "estimatedRecipients": "предполагаемых получателей",
       "selectForEstimate": "Выберите тип аудитории для расчёта.",
       "back": "Назад",
-      "next": "Далее"
+      "next": "Далее",
+      "errorCsvMissingPhone": "В CSV должен быть столбец «phone».",
+      "errorCsvParse": "Не удалось разобрать CSV-файл.",
+      "csvContactsFound": "В CSV найдено контактов: {count}."
     },
     "step3": {
       "title": "Персонализация сообщения",

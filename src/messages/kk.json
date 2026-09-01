@@ -1575,7 +1575,12 @@
       "interactiveReply": "[Interactive reply]",
       "unsupported": "[Unsupported message type]",
       "aiBadge": "AI",
-      "aiBadgeTitle": "Sent automatically by the AI assistant"
+      "aiBadgeTitle": "Sent automatically by the AI assistant",
+      "imageAlt": "Сурет",
+      "viewImage": "Толық өлшемде ашу",
+      "expandVideo": "Бейнені жаю",
+      "download": "Жүктеп алу",
+      "downloadFailed": "Тіркемені жүктеп алу мүмкін болмады"
     },
     "actions": {
       "reply": "Reply",
@@ -1672,7 +1677,10 @@
       "estimatedRecipients": "олжалды алушылар",
       "selectForEstimate": "Болжамды көру үшін аудитория түрін таңдаңыз.",
       "back": "Артқа",
-      "next": "Келесі"
+      "next": "Келесі",
+      "errorCsvMissingPhone": "CSV файлында «phone» бағаны болуы керек.",
+      "errorCsvParse": "CSV файлын оқу мүмкін болмады.",
+      "csvContactsFound": "CSV ішінен {count} контакт табылды."
     },
     "step3": {
       "title": "Хабарламаны реттеу",

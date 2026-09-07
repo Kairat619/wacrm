@@ -798,12 +798,28 @@
     "tooltipLostThisMonth": "Ағымдағы айдың бірінші күнінен бастап Жоғалған деп белгіленген мәмілелер.",
     "board": {
       "dropDealHere": "Мәмілені осында тастаңыз",
+      "noMatches": "Сәйкес мәмілелер жоқ",
       "addDeal": "Мәміле қосу"
     },
     "card": {
       "noContact": "Контакт жоқ",
       "won": "Ұтты",
       "lost": "Жоғалды"
+    },
+    "filters": {
+      "searchPlaceholder": "Мәмілелерді атауы, контакт немесе телефон бойынша іздеу",
+      "clearSearch": "Іздеуді тазалау",
+      "filters": "Сүзгілер",
+      "status": "Күйі",
+      "allStatuses": "Барлық күйлер",
+      "statusOpen": "Ашық",
+      "statusWon": "Ұтты",
+      "statusLost": "Жоғалды",
+      "assignee": "Жауапты",
+      "allAssignees": "Барлық жауаптылар",
+      "unassigned": "Жауаптысыз",
+      "matchCount": "{total} ішінен {count} көрсетілген",
+      "clear": "Тазалау"
     },
     "dealForm": {
       "newDeal": "Жаңа мәміле",

@@ -809,17 +809,7 @@
     "filters": {
       "searchPlaceholder": "Search deals by title, contact or phone",
       "clearSearch": "Clear search",
-      "filters": "Filters",
-      "status": "Status",
-      "allStatuses": "All statuses",
-      "statusOpen": "Open",
-      "statusWon": "Won",
-      "statusLost": "Lost",
-      "assignee": "Assignee",
-      "allAssignees": "All assignees",
-      "unassigned": "Unassigned",
-      "matchCount": "Showing {count} of {total}",
-      "clear": "Clear"
+      "matchCount": "Showing {count} of {total}"
     },
     "dealForm": {
       "newDeal": "New Deal",

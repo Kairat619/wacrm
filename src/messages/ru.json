@@ -809,17 +809,7 @@
     "filters": {
       "searchPlaceholder": "Поиск сделок по названию, контакту или телефону",
       "clearSearch": "Очистить поиск",
-      "filters": "Фильтры",
-      "status": "Статус",
-      "allStatuses": "Все статусы",
-      "statusOpen": "Открытая",
-      "statusWon": "Выиграна",
-      "statusLost": "Проиграна",
-      "assignee": "Ответственный",
-      "allAssignees": "Все ответственные",
-      "unassigned": "Без ответственного",
-      "matchCount": "Показано {count} из {total}",
-      "clear": "Сбросить"
+      "matchCount": "Показано {count} из {total}"
     },
     "dealForm": {
       "newDeal": "Новая сделка",

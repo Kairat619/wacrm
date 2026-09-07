@@ -546,6 +546,12 @@ export interface TagStepConfig {
 export interface AssignConversationStepConfig {
   mode: 'specific' | 'round_robin';
   agent_id?: string;
+  /**
+   * Round-robin only: the members to rotate between. Empty or absent means
+   * every admin/agent in the account — owners and viewers are never rotated
+   * into by default.
+   */
+  agent_ids?: string[];
 }
 
 export interface UpdateContactFieldStepConfig {

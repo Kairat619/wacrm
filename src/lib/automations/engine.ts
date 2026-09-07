@@ -19,6 +19,12 @@ import type {
   AssignConversationStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
+import {
+  nextAgent,
+  rotationPool,
+  tallyAssignments,
+  type RotationMember,
+} from './round-robin'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
@@ -485,15 +491,32 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!args.contactId) throw new Error('assign_conversation needs a contact')
       let agentId = cfg.agent_id
       if (cfg.mode === 'round_robin') {
-        // Pick any member of the account. The existing implementation
-        // only ever returned the automation's author; preserving that
-        // shape until a real round-robin algorithm replaces it.
+        // `account_role` is the membership role; `profiles.role` is a legacy
+        // column left over from before 017 and is not populated.
         const { data: profiles } = await db
           .from('profiles')
-          .select('user_id')
+          .select('user_id, account_role')
           .eq('account_id', args.automation.account_id)
-          .limit(1)
-        agentId = profiles?.[0]?.user_id
+        const members = ((profiles ?? []) as {
+          user_id: string
+          account_role: RotationMember['role']
+        }[]).map((p) => ({ user_id: p.user_id, role: p.account_role }))
+        const pool = rotationPool(members, cfg.agent_ids)
+        if (pool.length === 0) return 'no agent resolved'
+
+        // Live conversations only — closed ones are finished work and must
+        // not keep counting against the agent who handled them.
+        const { data: assigned } = await db
+          .from('conversations')
+          .select('assigned_agent_id')
+          .eq('account_id', args.automation.account_id)
+          .neq('status', 'closed')
+        agentId = nextAgent(
+          pool,
+          tallyAssignments(
+            (assigned ?? []) as { assigned_agent_id: string | null }[],
+          ),
+        )
       }
       if (!agentId) return 'no agent resolved'
       await db

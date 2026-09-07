@@ -798,12 +798,28 @@
     "tooltipLostThisMonth": "Сделки, отмеченные как Проигранные с первого дня текущего месяца.",
     "board": {
       "dropDealHere": "Перетащите сделку сюда",
+      "noMatches": "Нет подходящих сделок",
       "addDeal": "Добавить сделку"
     },
     "card": {
       "noContact": "Нет контакта",
       "won": "Выиграна",
       "lost": "Проиграна"
+    },
+    "filters": {
+      "searchPlaceholder": "Поиск сделок по названию, контакту или телефону",
+      "clearSearch": "Очистить поиск",
+      "filters": "Фильтры",
+      "status": "Статус",
+      "allStatuses": "Все статусы",
+      "statusOpen": "Открытая",
+      "statusWon": "Выиграна",
+      "statusLost": "Проиграна",
+      "assignee": "Ответственный",
+      "allAssignees": "Все ответственные",
+      "unassigned": "Без ответственного",
+      "matchCount": "Показано {count} из {total}",
+      "clear": "Сбросить"
     },
     "dealForm": {
       "newDeal": "Новая сделка",

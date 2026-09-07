@@ -25,6 +25,8 @@ import { formatCurrency } from "@/lib/currency";
 interface PipelineBoardProps {
   stages: PipelineStage[];
   deals: Deal[];
+  /** True when `deals` is a filtered subset — changes the empty-column copy. */
+  filtering?: boolean;
   onDealMoved: (dealId: string, newStageId: string) => void;
   onAddDeal: (stageId: string) => void;
   onEditDeal: (deal: Deal) => void;
@@ -33,6 +35,7 @@ interface PipelineBoardProps {
 export function PipelineBoard({
   stages,
   deals,
+  filtering = false,
   onDealMoved,
   onAddDeal,
   onEditDeal,
@@ -117,6 +120,7 @@ export function PipelineBoard({
               deals={stageDeals}
               totalValue={totalValue}
               currency={defaultCurrency}
+              filtering={filtering}
               onAddDeal={onAddDeal}
               onEditDeal={onEditDeal}
             />
@@ -191,6 +195,7 @@ function StageColumn({
   deals,
   totalValue,
   currency,
+  filtering,
   onAddDeal,
   onEditDeal,
 }: {
@@ -198,6 +203,7 @@ function StageColumn({
   deals: Deal[];
   totalValue: number;
   currency: string;
+  filtering: boolean;
   onAddDeal: (stageId: string) => void;
   onEditDeal: (deal: Deal) => void;
 }) {
@@ -239,7 +245,7 @@ function StageColumn({
       >
         {deals.length === 0 ? (
           <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed border-border py-10 text-xs text-muted-foreground">
-            {t("dropDealHere")}
+            {filtering ? t("noMatches") : t("dropDealHere")}
           </div>
         ) : (
           deals.map((deal) => (

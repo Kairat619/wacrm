@@ -798,12 +798,28 @@
     "tooltipLostThisMonth": "Deals marked as Lost since the first day of the current month.",
     "board": {
       "dropDealHere": "Drop a deal here",
+      "noMatches": "No matching deals",
       "addDeal": "Add Deal"
     },
     "card": {
       "noContact": "No contact",
       "won": "Won",
       "lost": "Lost"
+    },
+    "filters": {
+      "searchPlaceholder": "Search deals by title, contact or phone",
+      "clearSearch": "Clear search",
+      "filters": "Filters",
+      "status": "Status",
+      "allStatuses": "All statuses",
+      "statusOpen": "Open",
+      "statusWon": "Won",
+      "statusLost": "Lost",
+      "assignee": "Assignee",
+      "allAssignees": "All assignees",
+      "unassigned": "Unassigned",
+      "matchCount": "Showing {count} of {total}",
+      "clear": "Clear"
     },
     "dealForm": {
       "newDeal": "New Deal",

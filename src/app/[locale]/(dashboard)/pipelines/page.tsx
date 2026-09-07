@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import type { Pipeline, PipelineStage, Deal } from "@/types";
@@ -8,6 +8,13 @@ import { PipelineBoard } from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
 import { DealForm } from "@/components/pipelines/deal-form";
 import { PipelineAnalytics } from "@/components/pipelines/pipeline-analytics";
+import {
+  PipelineFilters,
+  filterDeals,
+  hasActiveFilters,
+  EMPTY_DEAL_FILTERS,
+  type DealFilters,
+} from "@/components/pipelines/pipeline-filters";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -58,6 +65,15 @@ export default function PipelinesPage() {
   const [stages, setStages] = useState<PipelineStage[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Board search / filters. Reset when the pipeline changes so a query
+  // typed on one board doesn't silently hide every card on the next.
+  const [filters, setFilters] = useState<DealFilters>(EMPTY_DEAL_FILTERS);
+  const visibleDeals = useMemo(
+    () => filterDeals(deals, filters),
+    [deals, filters],
+  );
+  const filtering = hasActiveFilters(filters);
 
   // Dialog / sheet state
   const [newPipelineOpen, setNewPipelineOpen] = useState(false);
@@ -191,6 +207,7 @@ export default function PipelinesPage() {
       if (cancelled) return;
       setStages(s);
       setDeals(d);
+      setFilters(EMPTY_DEAL_FILTERS);
     })();
     return () => {
       cancelled = true;
@@ -413,10 +430,19 @@ export default function PipelinesPage() {
         </div>
       ) : (
         <>
+          {/* Analytics stay on the full pipeline — the filters below
+              narrow the board, not the pipeline's headline numbers. */}
           <PipelineAnalytics stages={stages} deals={deals} />
+          <PipelineFilters
+            deals={deals}
+            filters={filters}
+            onFiltersChange={setFilters}
+            matchCount={visibleDeals.length}
+          />
           <PipelineBoard
             stages={stages}
-            deals={deals}
+            deals={visibleDeals}
+            filtering={filtering}
             onDealMoved={handleDealMoved}
             onAddDeal={handleAddDeal}
             onEditDeal={handleEditDeal}

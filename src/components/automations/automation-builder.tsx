@@ -452,6 +452,57 @@ function AgentSelect({
   )
 }
 
+/** Checkbox list picking who a round-robin step rotates between. Leaving
+ *  every box clear means "all agents and admins" — owners stay out unless
+ *  they are ticked explicitly, since an owner is an account holder rather
+ *  than a queue worker. */
+function AgentPoolSelect({
+  value,
+  onChange,
+  t,
+}: {
+  value: string[]
+  onChange: (v: string[]) => void
+  t: ReturnType<typeof useTranslations>
+}) {
+  const { members } = useResources()
+  if (members.length === 0) {
+    return <p className="text-xs text-muted-foreground">{t("agents.poolEmpty")}</p>
+  }
+  const toggle = (userId: string) =>
+    onChange(
+      value.includes(userId)
+        ? value.filter((id) => id !== userId)
+        : [...value, userId]
+    )
+  return (
+    <div className="space-y-1.5">
+      {members.map((m) => (
+        <label
+          key={m.user_id}
+          className="flex cursor-pointer items-center gap-2 text-sm text-foreground"
+        >
+          <input
+            type="checkbox"
+            checked={value.includes(m.user_id)}
+            onChange={() => toggle(m.user_id)}
+            className="size-3.5 accent-primary"
+          />
+          <span className="truncate">
+            {m.full_name || m.email || m.user_id}
+          </span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {m.role}
+          </span>
+        </label>
+      ))}
+      <p className="text-[11px] text-muted-foreground">
+        {value.length === 0 ? t("agents.poolHint") : t("agents.poolCount", { count: value.length })}
+      </p>
+    </div>
+  )
+}
+
 /** Pipeline + stage picker for Create Deal. The automation stores ids because
  *  the engine writes directly to deals, but authors should choose by name. */
 function DealPipelineFields({
@@ -1367,6 +1418,15 @@ function StepEditor({
               <AgentSelect
                 value={(cfg.agent_id as string) ?? ""}
                 onChange={(v) => set({ agent_id: v })}
+                t={t}
+              />
+            </FieldBlock>
+          )}
+          {cfg.mode === "round_robin" && (
+            <FieldBlock label={t("config.rotationLabel")}>
+              <AgentPoolSelect
+                value={(cfg.agent_ids as string[]) ?? []}
+                onChange={(v) => set({ agent_ids: v })}
                 t={t}
               />
             </FieldBlock>

@@ -2105,7 +2105,10 @@
       "agents": {
         "select": "Select an agent…",
         "placeholder": "Agent id",
-        "unknown": "{id} (unknown agent)"
+        "unknown": "{id} (unknown agent)",
+        "poolEmpty": "No members to rotate between yet.",
+        "poolHint": "Nobody ticked — rotates between all agents and admins.",
+        "poolCount": "Rotating between {count} members."
       },
       "pipelines": {
         "pipelineLabel": "Pipeline",
@@ -2141,6 +2144,7 @@
           "specific": "Specific agent"
         },
         "agentLabel": "Agent",
+        "rotationLabel": "Rotate between",
         "fieldLabel": "Field",
         "valueLabel": "Value",
         "placeholderValue": "Text or {{ vars.x }} / {{ message.text }}",

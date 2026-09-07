@@ -65,7 +65,7 @@
     "viewer": "Наблюдатель"
   },
   "sidebar": {
-    "brand": "almaCRM для Шарапат",
+    "brand": "SharapatCRM",
     "profile": "Профиль",
     "signOut": "Выйти",
     "collapse": "Свернуть боковую панель",
@@ -131,7 +131,7 @@
     "signup": {
       "title": "Создать аккаунт",
       "titleInvite": "Создать аккаунт и присоединиться",
-      "description": "Начните с almaCRM для Шарапат",
+      "description": "Начните с SharapatCRM",
       "descriptionInvite": "Подтвердите электронную почту, затем примите приглашение, чтобы присоединиться к команде.",
       "fullNamePlaceholder": "Иван Иванов",
       "emailPlaceholder": "you@example.com",

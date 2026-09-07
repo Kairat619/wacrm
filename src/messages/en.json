@@ -65,7 +65,7 @@
     "viewer": "Viewer"
   },
   "sidebar": {
-    "brand": "almaCRM for Sharapat",
+    "brand": "SharapatCRM",
     "profile": "Profile",
     "signOut": "Sign out",
     "collapse": "Collapse sidebar",
@@ -131,7 +131,7 @@
     "signup": {
       "title": "Create account",
       "titleInvite": "Create account & join",
-      "description": "Get started with almaCRM for Sharapat",
+      "description": "Get started with SharapatCRM",
       "descriptionInvite": "Verify your email, then accept the invitation to join your team.",
       "fullNamePlaceholder": "John Doe",
       "emailPlaceholder": "you@example.com",

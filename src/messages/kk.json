@@ -65,7 +65,7 @@
     "viewer": "Көруші"
   },
   "sidebar": {
-    "brand": "almaCRM Sharapat үшін",
+    "brand": "SharapatCRM",
     "profile": "Профиль",
     "signOut": "Шығу",
     "collapse": "Бүйір панельді жию",
@@ -131,7 +131,7 @@
     "signup": {
       "title": "Тіркелгі жасау",
       "titleInvite": "Тіркелгі жасау және қосылу",
-      "description": "almaCRM Sharapat үшін бастаңыз",
+      "description": "SharapatCRM-мен бастаңыз",
       "descriptionInvite": "Электрондық поштаңызды растаңыз, содан кейін командыңызға қосылу шақыруын қабылдаңыз.",
       "fullNamePlaceholder": "Әкесінің аты",
       "emailPlaceholder": "siz@мысал.қаз",

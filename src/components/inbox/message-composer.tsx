@@ -43,7 +43,6 @@ import {
 import {
   describeMicError,
   extensionForMimeType,
-  isWhatsAppReadyOgg,
   pickRecorderMimeType,
 } from '@/lib/media/voice-recording';
 import { ReplyQuote } from './reply-quote';
@@ -445,11 +444,12 @@ export function MessageComposer({
 
   // ---- Voice recording (native MediaRecorder + server FFmpeg) --------
 
-  // Stage a finished take as an audio draft. Firefox records Ogg/Opus
-  // natively and uploads directly; every other engine hands us WebM or
-  // MP4, which Meta's Cloud API rejects for voice notes, so those go
-  // through /api/media/voice-note first (FFmpeg → mono Ogg/Opus →
-  // chat-media). Both paths return { publicUrl, path }.
+  // Stage a finished take as an audio draft. Every take goes through
+  // /api/media/voice-note (FFmpeg → mono, 48 kHz, loudness-matched
+  // Ogg/Opus → chat-media), including Firefox's native Ogg: skipping the
+  // transcode for Ogg left stereo, off-level takes to reach the customer
+  // as captured, which is what made voice-note quality browser- and
+  // mic-dependent. The route returns { publicUrl, path }.
   const finalizeRecording = useCallback(
     async (blob: Blob, mimeType: string) => {
       if (blob.size === 0) return; // cancelled / empty take
@@ -459,47 +459,31 @@ export function MessageComposer({
       }
       setBusy(true);
       try {
-        let publicUrl: string;
-        let path: string;
-        if (isWhatsAppReadyOgg(mimeType)) {
-          // Already Ogg/Opus — skip the server round-trip. The stored
-          // content type is normalized to bare `audio/ogg`, the exact
-          // string the bucket allow-list pins (migration 023).
-          const file = new File([blob], `voice-${Date.now()}.ogg`, {
-            type: 'audio/ogg',
-          });
-          ({ publicUrl, path } = await uploadAccountMedia(
-            CHAT_MEDIA_BUCKET,
-            file
-          ));
-        } else {
-          const form = new FormData();
-          form.append(
-            'audio',
-            blob,
-            `voice-${Date.now()}.${extensionForMimeType(mimeType)}`
+        const form = new FormData();
+        form.append(
+          'audio',
+          blob,
+          `voice-${Date.now()}.${extensionForMimeType(mimeType)}`
+        );
+        const res = await fetch('/api/media/voice-note', {
+          method: 'POST',
+          body: form,
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          code?: string;
+          error?: string;
+          publicUrl?: string;
+          path?: string;
+        };
+        if (!res.ok || !data.publicUrl || !data.path) {
+          toast.error(
+            data.code === 'transcoder_unavailable'
+              ? "The server couldn't convert the recording — FFmpeg is missing from this deployment."
+              : (data.error ?? "Couldn't process the recording.")
           );
-          const res = await fetch('/api/media/voice-note', {
-            method: 'POST',
-            body: form,
-          });
-          const data = (await res.json().catch(() => ({}))) as {
-            code?: string;
-            error?: string;
-            publicUrl?: string;
-            path?: string;
-          };
-          if (!res.ok || !data.publicUrl || !data.path) {
-            toast.error(
-              data.code === 'transcoder_unavailable'
-                ? "The server couldn't convert the recording — FFmpeg is missing from this deployment."
-                : (data.error ?? "Couldn't process the recording.")
-            );
-            return;
-          }
-          publicUrl = data.publicUrl;
-          path = data.path;
+          return;
         }
+        const { publicUrl, path } = data;
         // Replacing an existing draft? GC the previous object first.
         removeStaged(draftRef.current?.path);
         setDraft({
@@ -534,8 +518,20 @@ export function MessageComposer({
     // to distinct, actionable messages instead of one blanket toast.
     let stream: MediaStream;
     try {
+      // Plain (non-`exact`) values are treated as "ideal", so an
+      // interface that can't honour one degrades instead of throwing
+      // OverconstrainedError. Mono at 48 kHz is what the Opus encoder
+      // wants anyway, and autoGainControl levels out the difference
+      // between a headset worn close and a laptop mic across the desk —
+      // the main reason two agents on the same build sounded different.
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 48_000,
+        },
       });
     } catch (err) {
       toast.error(describeMicError(err));
@@ -548,7 +544,15 @@ export function MessageComposer({
     try {
       recorder = new MediaRecorder(stream, {
         ...(mimeType ? { mimeType } : {}),
-        audioBitsPerSecond: 24_000, // speech-grade; server re-encodes anyway
+        // Capture well above the delivery bitrate. This used to be
+        // 24 kbps, which meant the audio was squeezed to speech-grade
+        // twice — once by the browser, once by the server's Opus pass —
+        // and the artefacts of the first pass were baked into the
+        // second (worst on Safari, whose 24 kbps AAC is far weaker than
+        // Opus at the same rate). 96 kbps is near-transparent for
+        // speech and a 5-minute take still lands ~3.6 MB, well inside
+        // the 16 MB cap.
+        audioBitsPerSecond: 96_000,
       });
     } catch (err) {
       stream.getTracks().forEach((track) => track.stop());

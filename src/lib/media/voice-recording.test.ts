@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   describeMicError,
   extensionForMimeType,
-  isWhatsAppReadyOgg,
   pickRecorderMimeType,
 } from './voice-recording';
 
@@ -50,20 +49,6 @@ describe('extensionForMimeType', () => {
     ['application/octet-stream', 'bin'],
   ])('maps %s to %s', (mime, expected) => {
     expect(extensionForMimeType(mime)).toBe(expected);
-  });
-});
-
-describe('isWhatsAppReadyOgg', () => {
-  it('accepts Ogg variants regardless of codec parameters', () => {
-    expect(isWhatsAppReadyOgg('audio/ogg')).toBe(true);
-    expect(isWhatsAppReadyOgg('audio/ogg;codecs=opus')).toBe(true);
-  });
-
-  it('rejects containers that need a server transcode', () => {
-    expect(isWhatsAppReadyOgg('audio/webm;codecs=opus')).toBe(false);
-    expect(isWhatsAppReadyOgg('audio/mp4')).toBe(false);
-    expect(isWhatsAppReadyOgg('video/webm')).toBe(false);
-    expect(isWhatsAppReadyOgg('')).toBe(false);
   });
 });
 

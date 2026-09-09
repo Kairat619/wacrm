@@ -19,9 +19,11 @@ import { extensionForMimeType } from '@/lib/media/voice-recording';
 
 // The server side of the inbox voice-note flow. Browsers record with
 // native MediaRecorder in whatever container they're good at (WebM/Opus
-// on Chrome, MP4/AAC on Safari) — but Meta's Cloud API only renders
-// Ogg/Opus as a playable voice note and rejects WebM outright. This
-// route normalizes any recording to mono Ogg/Opus via FFmpeg, uploads
+// on Chrome, MP4/AAC on Safari, Ogg/Opus on Firefox) — but Meta's Cloud
+// API only renders Ogg/Opus as a playable voice note and rejects WebM
+// outright. Every take comes through here, Firefox's included, so that
+// one pass — and only one — decides channels, rate and loudness.
+// This route normalizes any recording to mono Ogg/Opus via FFmpeg, uploads
 // it to the `chat-media` bucket under the caller's account folder, and
 // returns the same `{ publicUrl, path }` shape as the client-side
 // upload helper so the composer's draft/GC logic works unchanged.
@@ -57,9 +59,18 @@ class TranscoderUnavailableError extends Error {
 
 /**
  * Run one ffmpeg conversion to WhatsApp-voice-note spec: mono, 48 kHz,
- * Opus VOIP at 24 kbps in an Ogg container. Mono matters — WhatsApp
- * clients refuse stereo voice notes; 24 kbps keeps a 5-minute take
- * (~0.9 MB) well under the bucket's 16 MB cap.
+ * loudness-normalized Opus VOIP at 32 kbps in an Ogg container. Mono
+ * matters — WhatsApp clients refuse stereo voice notes; 32 kbps keeps a
+ * 5-minute take (~1.2 MB) well under the bucket's 16 MB cap.
+ *
+ * The two quality-relevant knobs, both there because recipients reported
+ * takes they couldn't make out:
+ *   - `loudnorm` to a fixed −16 LUFS target. Input level swings by tens
+ *     of dB between a headset and a far-field laptop mic, and a quiet
+ *     take stays quiet on the recipient's phone speaker in a noisy room.
+ *   - 32 kbps rather than 24. The browser no longer pre-squeezes to
+ *     24 kbps, so this pass is the only lossy step and can afford the
+ *     headroom; consonants survive it far better.
  *
  * Resolves when output is written; rejects with
  * TranscoderUnavailableError (ENOENT), a timeout error, or an Error
@@ -83,10 +94,13 @@ function runFfmpeg(inputPath: string, outputPath: string): Promise<void> {
         '1', // voice notes must be mono
         '-ar',
         '48000',
+        '-af',
+        // Single-pass EBU R128: -16 LUFS integrated, -1.5 dBTP ceiling.
+        'loudnorm=I=-16:TP=-1.5:LRA=11',
         '-c:a',
         'libopus',
         '-b:a',
-        '24k',
+        '32k',
         '-application',
         'voip', // speech tuning — better intelligibility than "audio"
         '-f',

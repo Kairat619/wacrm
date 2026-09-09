@@ -12,9 +12,12 @@
  * Meta's Cloud API renders a message as a playable voice note only for
  * .ogg files with the Opus codec (mono) — WebM is rejected outright and
  * MP4/AAC degrades to a plain audio attachment. So the client picks the
- * best type it can record with `pickRecorderMimeType`, and anything that
- * isn't already Ogg/Opus is transcoded server-side (FFmpeg) before
- * upload. These helpers are pure so both sides stay unit-testable.
+ * best type it can record with `pickRecorderMimeType` and *every* take —
+ * Firefox's Ogg included — is normalized server-side (FFmpeg → mono,
+ * 48 kHz, loudness-matched Opus). Ogg recordings used to skip that step,
+ * which is why quality varied by browser and microphone: a stereo or
+ * quiet Firefox take reached the customer exactly as captured. These
+ * helpers are pure so both sides stay unit-testable.
  */
 
 /**
@@ -53,17 +56,6 @@ export function extensionForMimeType(mimeType: string): string {
   if (mime.includes('wav')) return 'wav';
   if (mime.includes('amr')) return 'amr';
   return 'bin';
-}
-
-/**
- * True when a recorded blob can be uploaded to chat-media as-is because
- * it's already an Ogg container (Firefox). Matches any `audio/ogg*`
- * variant — codec parameters are irrelevant here since we normalize the
- * stored content type to bare `audio/ogg` either way (that exact string
- * is what the bucket's allowed_mime_types pins, migration 023).
- */
-export function isWhatsAppReadyOgg(mimeType: string): boolean {
-  return mimeType.toLowerCase().startsWith('audio/ogg');
 }
 
 /**

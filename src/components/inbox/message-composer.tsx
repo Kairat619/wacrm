@@ -54,6 +54,7 @@ import {
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive';
 import type { InteractiveMessagePayload, QuickReply } from '@/types';
 import { QuickReplyPicker } from './quick-reply-picker';
+import { EmojiPicker } from './emoji-picker';
 
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = 'image' | 'video' | 'document' | 'audio';
@@ -267,6 +268,28 @@ export function MessageComposer({
       adjustHeight();
     },
     [adjustHeight]
+  );
+
+  // Drop an emoji in at the caret (replacing any selection) rather than
+  // appending, so an agent can punctuate mid-sentence. The textarea is
+  // controlled, so the caret is restored after React commits the value.
+  const insertEmoji = useCallback(
+    (emoji: string) => {
+      const el = textareaRef.current;
+      const start = el?.selectionStart ?? text.length;
+      const end = el?.selectionEnd ?? text.length;
+      const next = `${text.slice(0, start)}${emoji}${text.slice(end)}`;
+      setText(next);
+      const caret = start + emoji.length;
+      requestAnimationFrame(() => {
+        adjustHeight();
+        const node = textareaRef.current;
+        if (!node) return;
+        node.focus();
+        node.setSelectionRange(caret, caret);
+      });
+    },
+    [text, adjustHeight]
   );
 
   // Ask the AI assistant for a suggested reply and drop it into the
@@ -838,6 +861,14 @@ export function MessageComposer({
           >
             <LayoutTemplate className="h-4 w-4" />
           </GatedButton>
+
+          {/* Emoji picker — same 24h gating as free-form text, since the
+              glyph is only useful inside a text message. */}
+          <EmojiPicker
+            onSelect={insertEmoji}
+            disabled={inputsDisabled}
+            title={readOnly ? t('readOnlyTitle') : undefined}
+          />
 
           <GatedButton
             variant="ghost"

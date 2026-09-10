@@ -1452,7 +1452,21 @@
       "saveAsQuickReply": "Save as quick reply",
       "quickReplyNamePrompt": "Name this quick reply:",
       "quickReplySaved": "Saved as a quick reply.",
-      "quickReplySaveError": "Couldn't save the quick reply."
+      "quickReplySaveError": "Couldn't save the quick reply.",
+      "emojiSearchPlaceholder": "Search emoji",
+      "emojiRecent": "Frequently used",
+      "emojiNoResults": "No emoji match that search.",
+      "emojiCategory": {
+        "smileys": "Smileys & emotion",
+        "gestures": "Gestures & hands",
+        "people": "People",
+        "nature": "Animals & nature",
+        "food": "Food & drink",
+        "activity": "Activities",
+        "travel": "Travel & places",
+        "objects": "Objects",
+        "symbols": "Symbols"
+      }
     },
     "sidebar": {
       "contactInfo": "Contact Info",

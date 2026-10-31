@@ -79,6 +79,12 @@ interface ReplyDraft {
   id: string;
   authorLabel: string;
   preview: string;
+  thumbnailUrl?: string;
+}
+
+/** Image media_url to show as a thumbnail in a reply quote, if any. */
+function quoteThumbnailUrl(m: Message): string | undefined {
+  return m.content_type === "image" && m.media_url ? m.media_url : undefined;
 }
 
 interface MessageThreadProps {
@@ -891,9 +897,31 @@ export function MessageThread({
         id: msg.id,
         authorLabel: authorLabelFor(msg),
         preview: buildReplyPreview(msg, tQuote),
+        thumbnailUrl: quoteThumbnailUrl(msg),
       });
     },
     [authorLabelFor],
+  );
+
+  // Clicking a reply quote scrolls to the quoted message and flashes it,
+  // so agents can see exactly which photo/message the customer pointed at.
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const jumpToMessage = useCallback((messageId: string) => {
+    const el = scrollRef.current?.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(messageId)}"]`,
+    );
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedId(messageId);
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightedId(null), 1800);
+  }, []);
+  useEffect(
+    () => () => {
+      if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    },
+    [],
   );
 
   // Single reaction-set primitive. emoji === "" removes; otherwise adds/swaps.
@@ -1237,6 +1265,8 @@ export function MessageThread({
                               ? t("me") 
                               : contact?.name || contact?.phone || t("unknown"),
                           preview: buildReplyPreview(parent, tQuote),
+                          thumbnailUrl: quoteThumbnailUrl(parent),
+                          onClick: () => jumpToMessage(parent.id),
                         }
                       : null;
                     const msgReactions = reactionsByMessageId.get(msg.id);
@@ -1247,8 +1277,15 @@ export function MessageThread({
                       void postReaction(msg.id, next);
                     };
                     return (
-                      <MessageActions
+                      <div
                         key={msg.id}
+                        data-message-id={msg.id}
+                        className={cn(
+                          "-mx-2 rounded-xl px-2 transition-colors duration-700",
+                          highlightedId === msg.id && "bg-primary/15",
+                        )}
+                      >
+                      <MessageActions
                         message={msg}
                         onReply={() => handleStartReply(msg)}
                         onReact={(emoji) => {
@@ -1268,6 +1305,7 @@ export function MessageThread({
                           onOpenMedia={handleMediaChange}
                         />
                       </MessageActions>
+                      </div>
                     );
                   })}
                 </div>

@@ -43,7 +43,12 @@ interface MessageBubbleProps {
   message: Message;
   template?: MessageTemplate | null;
   /** Pre-computed quote info for messages that reply to another. */
-  reply?: { authorLabel: string; preview: string } | null;
+  reply?: {
+    authorLabel: string;
+    preview: string;
+    thumbnailUrl?: string;
+    onClick?: () => void;
+  } | null;
   reactions?: MessageReaction[];
   onToggleReaction?: (emoji: string) => void;
   /**
@@ -397,6 +402,8 @@ export function MessageBubble({
           <ReplyQuote
             authorLabel={reply.authorLabel}
             preview={reply.preview}
+            thumbnailUrl={reply.thumbnailUrl}
+            onClick={reply.onClick}
             onPrimary={isAgent}
           />
         )}

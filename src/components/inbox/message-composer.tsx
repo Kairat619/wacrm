@@ -87,6 +87,7 @@ interface ReplyDraft {
   id: string;
   authorLabel: string;
   preview: string;
+  thumbnailUrl?: string;
 }
 
 // Mirrors the chat-media bucket's allowed_mime_types (migration 023) for
@@ -701,6 +702,7 @@ export function MessageComposer({
           <ReplyQuote
             authorLabel={replyTo.authorLabel}
             preview={replyTo.preview}
+            thumbnailUrl={replyTo.thumbnailUrl}
             onDismiss={onClearReply}
           />
         </div>

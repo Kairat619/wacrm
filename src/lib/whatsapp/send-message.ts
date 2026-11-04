@@ -27,6 +27,7 @@ import {
   sendMediaMessage,
   sendInteractiveButtons,
   sendInteractiveList,
+  MetaApiError,
   type MediaKind,
 } from '@/lib/whatsapp/meta-api';
 import {
@@ -42,6 +43,13 @@ import {
 } from '@/lib/whatsapp/phone-utils';
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity';
 import { applyPendingMessageStatuses } from '@/lib/whatsapp/message-status-sync';
+import { outboundPersistFirstEnabled } from '@/lib/reliability/flags';
+import {
+  beginOutboundMessage,
+  completeOutboundMessage,
+  failOutboundMessage,
+} from '@/lib/whatsapp/outbound-state';
+import type { RetryClass } from '@/lib/whatsapp/outbound-failure';
 import type { MessageTemplate } from '@/types';
 import {
   resolveTemplateRow,
@@ -66,12 +74,50 @@ export const VALID_MESSAGE_TYPES = [
 export class SendMessageError extends Error {
   readonly code: string;
   readonly status: number;
-  constructor(code: string, message: string, status: number) {
+  /** Meta's structured failure, when the error came from the Graph API. */
+  readonly meta: MetaFailureDetails | null;
+  /** The saved row and its state, when one exists (persist-first path). */
+  readonly outbound: OutboundFailureState | null;
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+    meta: MetaFailureDetails | null = null,
+    outbound: OutboundFailureState | null = null
+  ) {
     super(message);
     this.name = 'SendMessageError';
     this.code = code;
     this.status = status;
+    this.meta = meta;
+    this.outbound = outbound;
   }
+}
+
+export interface OutboundFailureState {
+  messageId: string;
+  status: string;
+  retryClass: RetryClass | null;
+}
+
+/** What Meta told us about a failed call; quoted to Meta support as-is. */
+export interface MetaFailureDetails {
+  httpStatus: number;
+  code: number | null;
+  subcode: number | null;
+  fbtraceId: string | null;
+  details: string | null;
+}
+
+function metaFailureDetails(err: unknown): MetaFailureDetails | null {
+  if (!(err instanceof MetaApiError)) return null;
+  return {
+    httpStatus: err.httpStatus,
+    code: err.code,
+    subcode: err.subcode,
+    fbtraceId: err.fbtraceId,
+    details: err.details,
+  };
 }
 
 export interface SendMessageParams {
@@ -90,6 +136,18 @@ export interface SendMessageParams {
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
   senderId?: string | null;
+  /**
+   * Caller-generated id for this send. A repeat with the same id returns the
+   * first result rather than sending again. Persist-first path only.
+   */
+  clientRequestId?: string | null;
+}
+
+export interface SendMessageOptions {
+  /** Row already claimed as `sending`: this is a retry, so don't save another. */
+  existingRowId?: string;
+  /** Attempt number of this send, counting the first. */
+  attempts?: number;
 }
 
 export interface SendMessageResult {
@@ -189,7 +247,8 @@ export function validateSendMessageParams(params: {
 export async function sendMessageToConversation(
   db: SupabaseClient,
   accountId: string,
-  params: SendMessageParams
+  params: SendMessageParams,
+  options: SendMessageOptions = {}
 ): Promise<SendMessageResult> {
   const {
     conversationId,
@@ -204,6 +263,7 @@ export async function sendMessageToConversation(
     templateMessageParams,
     interactivePayload,
     replyToMessageId,
+    clientRequestId,
   } = params;
 
   if (!conversationId) {
@@ -343,6 +403,71 @@ export async function sendMessageToConversation(
     sendLanguage = resolved.language;
   }
 
+  // Field names MUST match the messages
+  // schema (see 001_initial_schema.sql).
+  // Interactive messages persist the body as content_text (so the
+  // conversation-list preview reads sensibly) plus the full structured
+  // payload so the thread can re-render the buttons / rows.
+  //
+  // Templates persist the *substituted* body. The composer pre-renders
+  // and posts it as contentText; every other caller (the public API,
+  // most importantly) sends none, and storing null there left the
+  // Inbox rendering an empty bubble — issue #483.
+  const persistedText =
+    messageType === 'interactive'
+      ? interactivePayload!.body
+      : messageType === 'template'
+        ? templateContentText(
+            templateRow,
+            templateBodyParams(templateParams, templateMessageParams),
+            contentText
+          )
+        : (contentText ?? null);
+
+  const messageFields = {
+    conversation_id: conversationId,
+    sender_type: 'agent',
+    sender_id: senderId ?? null,
+    content_type: messageType,
+    content_text: persistedText,
+    media_url:
+      messageType === 'template'
+        ? templateHeaderMediaUrl(templateRow, templateMessageParams)
+        : mediaUrl || null,
+    template_name: templateName || null,
+    interactive_payload:
+      messageType === 'interactive' ? interactivePayload : null,
+    reply_to_message_id: replyToMessageId || null,
+  };
+
+  // Persist-first: the row exists before Meta hears anything, so no send can go
+  // unrecorded and a failure survives a reload.
+  let persistedRowId = options.existingRowId ?? null;
+  if (!persistedRowId && outboundPersistFirstEnabled()) {
+    const begun = await beginOutboundMessage(
+      db,
+      messageFields,
+      clientRequestId ?? null,
+      params
+    );
+    if (begun.kind === 'duplicate') {
+      if (begun.whatsappMessageId) {
+        return {
+          messageId: begun.id,
+          whatsappMessageId: begun.whatsappMessageId,
+        };
+      }
+      throw new SendMessageError(
+        'duplicate_request',
+        'This message is already being processed.',
+        409,
+        null,
+        { messageId: begun.id, status: begun.status, retryClass: begun.retryClass }
+      );
+    }
+    persistedRowId = begun.id;
+  }
+
   const attempt = async (phone: string): Promise<string> => {
     if (messageType === 'template') {
       const result = await sendTemplateMessage({
@@ -442,13 +567,34 @@ export async function sendMessageToConversation(
   } catch (err) {
     const message =
       err instanceof Error ? err.message : 'Unknown Meta API error';
-    console.error('[send-message] Meta send failed for all variants:', message);
-    throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
+    const meta = metaFailureDetails(err);
+    console.error('[send-message] Meta send failed:', message, meta ?? '');
+    let outbound: OutboundFailureState | null = null;
+    if (persistedRowId) {
+      const outcome = await failOutboundMessage(
+        db,
+        persistedRowId,
+        err,
+        options.attempts ?? 1
+      );
+      outbound = {
+        messageId: persistedRowId,
+        status: outcome.status,
+        retryClass: outcome.retryClass,
+      };
+    }
+    throw new SendMessageError(
+      'meta_error',
+      `Meta API error: ${message}`,
+      502,
+      meta,
+      outbound
+    );
   }
 
   if (hasValidPhone && workingPhone !== sanitizedPhone) {
     console.log(
-      `[send-message] Auto-corrected contact phone: ${sanitizedPhone} → ${workingPhone}`
+      `[send-message] Auto-corrected phone format for contact ${contact.id}`
     );
     await db
       .from('contacts')
@@ -456,56 +602,30 @@ export async function sendMessageToConversation(
       .eq('id', contact.id);
   }
 
-  // Persist the sent message. Field names MUST match the messages
-  // schema (see 001_initial_schema.sql).
-  // Interactive messages persist the body as content_text (so the
-  // conversation-list preview reads sensibly) plus the full structured
-  // payload so the thread can re-render the buttons / rows.
-  //
-  // Templates persist the *substituted* body. The composer pre-renders
-  // and posts it as contentText; every other caller (the public API,
-  // most importantly) sends none, and storing null there left the
-  // Inbox rendering an empty bubble — issue #483.
-  const persistedText =
-    messageType === 'interactive'
-      ? interactivePayload!.body
-      : messageType === 'template'
-        ? templateContentText(
-            templateRow,
-            templateBodyParams(templateParams, templateMessageParams),
-            contentText
-          )
-        : (contentText ?? null);
+  let messageRowId: string;
+  if (persistedRowId) {
+    await completeOutboundMessage(db, persistedRowId, waMessageId);
+    messageRowId = persistedRowId;
+  } else {
+    const { data: messageRecord, error: msgError } = await db
+      .from('messages')
+      .insert({
+        ...messageFields,
+        message_id: waMessageId,
+        status: 'sent',
+      })
+      .select()
+      .single();
 
-  const { data: messageRecord, error: msgError } = await db
-    .from('messages')
-    .insert({
-      conversation_id: conversationId,
-      sender_type: 'agent',
-      sender_id: senderId ?? null,
-      content_type: messageType,
-      content_text: persistedText,
-      media_url:
-        messageType === 'template'
-          ? templateHeaderMediaUrl(templateRow, templateMessageParams)
-          : mediaUrl || null,
-      template_name: templateName || null,
-      interactive_payload:
-        messageType === 'interactive' ? interactivePayload : null,
-      message_id: waMessageId,
-      status: 'sent',
-      reply_to_message_id: replyToMessageId || null,
-    })
-    .select()
-    .single();
-
-  if (msgError) {
-    console.error('[send-message] error inserting sent message:', msgError);
-    throw new SendMessageError(
-      'db_error',
-      `Message sent to Meta but failed to save to DB: ${msgError.message}`,
-      500
-    );
+    if (msgError) {
+      console.error('[send-message] error inserting sent message:', msgError);
+      throw new SendMessageError(
+        'db_error',
+        `Message sent to Meta but failed to save to DB: ${msgError.message}`,
+        500
+      );
+    }
+    messageRowId = messageRecord.id;
   }
 
   await applyPendingMessageStatuses(supabaseAdmin(), accountId, waMessageId);
@@ -547,5 +667,5 @@ export async function sendMessageToConversation(
     );
   }
 
-  return { messageId: messageRecord.id, whatsappMessageId: waMessageId };
+  return { messageId: messageRowId, whatsappMessageId: waMessageId };
 }

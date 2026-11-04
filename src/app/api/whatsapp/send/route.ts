@@ -61,6 +61,7 @@ export async function POST(request: Request) {
       template_message_params,
       interactive_payload,
       reply_to_message_id,
+      client_request_id,
     } = body
 
     if ((!conversationIdInput && !contact_id) || !message_type) {
@@ -169,6 +170,10 @@ export async function POST(request: Request) {
         interactivePayload: interactive_payload,
         replyToMessageId: reply_to_message_id,
         senderId: userId,
+        clientRequestId:
+          typeof client_request_id === 'string' && client_request_id.length <= 100
+            ? client_request_id
+            : null,
       })
 
       return NextResponse.json({
@@ -179,7 +184,17 @@ export async function POST(request: Request) {
     } catch (err) {
       if (err instanceof SendMessageError) {
         return NextResponse.json(
-          { error: err.message },
+          {
+            error: err.message,
+            // Lets the thread attach the saved row to the optimistic bubble.
+            ...(err.outbound
+              ? {
+                  message_id: err.outbound.messageId,
+                  status: err.outbound.status,
+                  retry_class: err.outbound.retryClass,
+                }
+              : {}),
+          },
           { status: err.status }
         )
       }

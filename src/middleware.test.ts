@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
+import { AuthRetryableFetchError } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
+import { __resetSessionChecksForTests } from "@/lib/auth/session-single-flight";
 
 // --- Scenario knobs the mock reads -----------------------------------------
 // `mockUser`         — what getUser() resolves to (a refreshed session ⇒ user,
@@ -11,6 +13,8 @@ import { NextRequest } from "next/server";
 //                      of the test is that these must survive onto whatever
 //                      response the middleware returns — including redirects.
 let mockUser: { id: string } | null = null;
+let mockAuthError: Error | null = null;
+let getUserCalls = 0;
 let refreshedCookies: Array<{
   name: string;
   value: string;
@@ -30,8 +34,9 @@ vi.mock("@supabase/ssr", () => ({
       // refreshed inside getUser(), which rotates the refresh token and
       // pushes the new cookies through setAll() before resolving.
       getUser: async () => {
+        getUserCalls++;
         if (refreshedCookies.length) opts.cookies.setAll(refreshedCookies);
-        return { data: { user: mockUser } };
+        return { data: { user: mockUser }, error: mockAuthError };
       },
     },
   }),
@@ -44,7 +49,10 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://test.supabase.co";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
   mockUser = null;
+  mockAuthError = null;
   refreshedCookies = [];
+  getUserCalls = 0;
+  __resetSessionChecksForTests();
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -114,6 +122,113 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     // No redirect — the normal NextResponse.next() already carries cookies.
     expect(res.headers.get("location")).toBeNull();
     expect(res.cookies.get(ROTATED.name)?.value).toBe(ROTATED.value);
+  });
+});
+
+describe("middleware — Supabase being unreachable is not a logout", () => {
+  it("does not redirect a page request to /login", async () => {
+    mockAuthError = new AuthRetryableFetchError("fetch failed", 503);
+
+    const res = await middleware(
+      new NextRequest("https://app.test/en/dashboard"),
+    );
+
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("answers an API request with a retryable 503 rather than 401", async () => {
+    mockAuthError = new AuthRetryableFetchError("fetch failed", 503);
+
+    const res = await middleware(
+      new NextRequest("https://app.test/api/whatsapp/send"),
+    );
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("retry-after")).toBe("5");
+  });
+
+  it("does not interfere with the signature-checked webhook", async () => {
+    mockAuthError = new AuthRetryableFetchError("fetch failed", 503);
+
+    const res = await middleware(
+      new NextRequest("https://app.test/api/whatsapp/webhook"),
+    );
+
+    expect(res.status).toBe(200);
+  });
+
+  it("still redirects when the session is really gone", async () => {
+    mockAuthError = new Error("refresh_token_not_found");
+
+    const res = await middleware(
+      new NextRequest("https://app.test/en/dashboard"),
+    );
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/login");
+  });
+});
+
+describe("middleware — a lost session", () => {
+  const withSession = (url: string) =>
+    new NextRequest(url, {
+      headers: { cookie: "sb-test-auth-token=dead-token" },
+    });
+
+  it("tells the login page why, and where to return to", async () => {
+    vi.spyOn(console, "warn").mockImplementationOnce(() => {});
+    mockAuthError = Object.assign(new Error("Invalid Refresh Token"), {
+      code: "refresh_token_not_found",
+    });
+
+    const res = await middleware(withSession("https://app.test/en/inbox"));
+
+    const location = new URL(res.headers.get("location")!);
+    expect(location.pathname).toContain("/login");
+    expect(location.searchParams.get("reason")).toBe("session_expired");
+    expect(location.searchParams.get("next")).toBe("/en/inbox");
+  });
+
+  it("logs the failure code and never the token", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementationOnce(() => {});
+    mockAuthError = Object.assign(new Error("Invalid Refresh Token"), {
+      code: "refresh_token_not_found",
+    });
+
+    await middleware(withSession("https://app.test/en/inbox"));
+
+    const logged = warn.mock.calls.flat().join(" ");
+    expect(logged).toContain("auth.refresh_failed");
+    expect(logged).toContain("refresh_token_not_found");
+    expect(logged).not.toContain("dead-token");
+  });
+
+  it("adds no reason for a visitor who simply isn't signed in", async () => {
+    const res = await middleware(new NextRequest("https://app.test/en/inbox"));
+
+    expect(res.headers.get("location")).not.toContain("reason=");
+  });
+});
+
+describe("middleware — concurrent requests with one session", () => {
+  it("refreshes once, and gives every response the new token", async () => {
+    mockUser = { id: "user-1" };
+    refreshedCookies = [ROTATED];
+    const request = () =>
+      new NextRequest("https://app.test/api/whatsapp/media/1", {
+        headers: { cookie: "sb-test-auth-token=expired-token" },
+      });
+
+    const responses = await Promise.all([
+      middleware(request()),
+      middleware(request()),
+      middleware(request()),
+    ]);
+
+    expect(getUserCalls).toBe(1);
+    for (const res of responses) {
+      expect(res.cookies.get(ROTATED.name)?.value).toBe(ROTATED.value);
+    }
   });
 });
 

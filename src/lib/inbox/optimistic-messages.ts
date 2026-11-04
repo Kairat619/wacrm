@@ -49,6 +49,27 @@ export function confirmedSendUpdate(response: unknown): Partial<Message> {
     : { status: "sent" };
 }
 
+/**
+ * The bubble's state after a failed send. When the server saved a row, the bubble
+ * becomes that row, so a later reload or realtime event can't show a second copy.
+ */
+export function failedSendUpdate(response: unknown): Partial<Message> {
+  const body = (response ?? {}) as {
+    message_id?: unknown;
+    status?: unknown;
+    retry_class?: unknown;
+  };
+  if (typeof body.message_id !== "string" || !body.message_id) {
+    return { status: "failed" };
+  }
+  return {
+    id: body.message_id,
+    status: body.status === "queued" ? "queued" : "failed",
+    retry_class: (body.retry_class as Message["retry_class"]) ?? null,
+    send_params: true,
+  };
+}
+
 export function applyMessageUpdate(
   prev: Message[],
   id: string,
@@ -56,7 +77,16 @@ export function applyMessageUpdate(
 ): Message[] {
   const nextId = updates.id;
   if (nextId && nextId !== id && prev.some((m) => m.id === nextId)) {
-    return prev.filter((m) => m.id !== id);
+    // Realtime already delivered the row. If it's still waiting on its send, this
+    // is the only news it may get, since a realtime update can be dropped. A row
+    // further along is left alone, as it can't have gone backwards.
+    return prev
+      .filter((m) => m.id !== id)
+      .map((m) =>
+        m.id === nextId && (m.status === "queued" || m.status === "sending")
+          ? { ...m, ...updates }
+          : m,
+      );
   }
   return prev.map((m) => (m.id === id ? { ...m, ...updates } : m));
 }

@@ -82,6 +82,57 @@ BEGIN
       'messages.error_code/error_title/error_details are missing — migration 042 did not apply';
   END IF;
 
+  -- Reliability work (060-063). The outbound path writes these untyped too.
+  IF (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'messages'
+      AND column_name IN (
+        'media_id', 'client_request_id', 'send_params', 'send_attempts',
+        'sending_since', 'next_retry_at', 'retry_class', 'error_http_status',
+        'error_subcode', 'error_fbtrace_id'
+      )
+  ) <> 10 THEN
+    RAISE EXCEPTION 'messages reliability columns are missing — migrations 060/063 did not apply';
+  END IF;
+
+  IF to_regclass('public.webhook_events') IS NULL THEN
+    RAISE EXCEPTION 'public.webhook_events is missing — migration 061 did not apply';
+  END IF;
+
+  IF to_regclass('public.media_jobs') IS NULL THEN
+    RAISE EXCEPTION 'public.media_jobs is missing — migration 062 did not apply';
+  END IF;
+
+  -- `queued` must be accepted, which means the old constraint really was dropped.
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.messages'::regclass AND conname = 'messages_status_check'
+  ) THEN
+    RAISE EXCEPTION 'messages_status_check still exists — migration 063 did not replace it';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.messages'::regclass
+      AND conname = 'messages_status_allowed'
+      AND convalidated
+  ) THEN
+    RAISE EXCEPTION 'messages_status_allowed is missing or unvalidated — migration 063 did not apply';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN ('claim_webhook_events', 'claim_media_jobs', 'claim_outbound_retries', 'flag_stuck_outbound')
+      AND (
+        has_function_privilege('anon', p.oid, 'EXECUTE')
+        OR has_function_privilege('authenticated', p.oid, 'EXECUTE')
+      )
+  ) THEN
+    RAISE EXCEPTION 'a job-claiming function is callable by anon or authenticated';
+  END IF;
+
   IF EXISTS (
     SELECT 1 FROM pg_policies
     WHERE schemaname = 'storage' AND tablename = 'objects'

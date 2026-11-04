@@ -14,6 +14,9 @@ const tablesWithoutDomainData = new Set([
   "account_invitations",
   "member_presence",
   "pending_message_statuses",
+  // Every job references a message in the account, and the function already
+  // refuses when the account has conversations, so a job is never the only data.
+  "media_jobs",
 ]);
 
 function accountScopedTables(): Set<string> {

@@ -33,6 +33,7 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build
+RUN npm run build:worker
 
 # ---------------------------------------------------------------
 # Stage 3 — minimal runtime (standalone output)
@@ -55,6 +56,9 @@ RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
+# The background worker. Same image, started as its own Railway service with
+# `node worker.cjs` (see railway.worker.json).
+COPY --from=builder --chown=nextjs:nextjs /app/build/worker/worker.cjs ./worker.cjs
 
 USER nextjs
 EXPOSE 3000

@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { safeNextPath } from "@/lib/auth/callback";
 import { Link } from "@/i18n/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,9 @@ function LoginPageInner() {
       ? t("linkExpired")
       : linkError === "link_invalid"
         ? t("linkInvalid")
-        : null;
+        : searchParams.get("reason") === "session_expired"
+          ? t("sessionExpired")
+          : null;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -72,7 +75,7 @@ function LoginPageInner() {
     // reload the invite-accept flow already uses in join/[token].
     const destination = inviteToken
       ? `/join/${encodeURIComponent(inviteToken)}`
-      : "/dashboard";
+      : safeNextPath(searchParams.get("next"), "/dashboard");
     window.location.href = destination;
   };
 

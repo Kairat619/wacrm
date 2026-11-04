@@ -5,6 +5,8 @@ import {
   isMessageStatus,
   statusesAdvanceableTo,
 } from './message-status'
+import { handleStatusFailure } from './outbound-state'
+import { outboundPersistFirstEnabled } from '@/lib/reliability/flags'
 
 export interface MessageStatusFailure {
   code: number
@@ -181,7 +183,15 @@ export async function applyMessageStatus(
   const rows = await findAccountMessages(db, accountId, incoming.wamid)
   if (!rows) return []
   if (rows.length > 0) {
-    return advanceMessages(db, rows, incoming.status, incoming.failure)
+    const advanced = await advanceMessages(db, rows, incoming.status, incoming.failure)
+    if (incoming.status === 'failed' && outboundPersistFirstEnabled()) {
+      await handleStatusFailure(
+        db,
+        advanced.map((row) => row.id),
+        incoming.failure?.code ?? null
+      )
+    }
+    return advanced
   }
 
   await storePendingStatus(db, accountId, incoming)

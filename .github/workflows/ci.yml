@@ -51,3 +51,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Build worker
+        run: npm run build:worker

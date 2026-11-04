@@ -51,6 +51,8 @@ interface MessageBubbleProps {
   } | null;
   reactions?: MessageReaction[];
   onToggleReaction?: (emoji: string) => void;
+  /** Resend a failed message. Offered only when its failure allows a retry. */
+  onRetry?: (message: Message) => void;
   /**
    * Opens the thread's media viewer on this message. Only images and videos
    * call it; omitted when the parent renders no viewer, in which case media
@@ -131,6 +133,23 @@ function TemplateHeader({
   );
 }
 
+/** Failures an agent can't act on from Meta's own wording. */
+function failureGuidanceKey(message: Message): string | null {
+  if (message.status !== "failed") return null;
+  if (message.retry_class === "delivery_unknown") return "deliveryUnknown";
+  if (message.error_code === 131049) return "engagementRestricted";
+  return null;
+}
+
+/** Saved rows only: an unsaved failure has nothing on the server to resend. */
+function canRetry(message: Message): boolean {
+  return (
+    message.status === "failed" &&
+    !!message.send_params &&
+    (message.retry_class === "manual" || message.retry_class === "delivery_unknown")
+  );
+}
+
 function failureReason(message: Message): string | null {
   if (message.status !== "failed" || !message.error_title) return null;
   return message.error_details
@@ -147,6 +166,7 @@ function StatusIcon({
   title?: string | null;
 }) {
   switch (status) {
+    case "queued":
     case "sending":
       return <Clock className="h-3 w-3 text-muted-foreground" />;
     case "sent":
@@ -374,12 +394,18 @@ export function MessageBubble({
   reactions,
   onToggleReaction,
   onOpenMedia,
+  onRetry,
 }: MessageBubbleProps) {
   const t = useTranslations("inbox.bubble");
 
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
   const time = format(new Date(message.created_at), "HH:mm");
-  const failure = isAgent ? failureReason(message) : null;
+  const guidanceKey = isAgent ? failureGuidanceKey(message) : null;
+  const failure = guidanceKey
+    ? t(guidanceKey)
+    : isAgent
+      ? failureReason(message)
+      : null;
 
   // Row alignment + width cap are owned by <MessageActions> so its hover
   // group matches the bubble's content area, not the full row.
@@ -455,6 +481,15 @@ export function MessageBubble({
         >
           {t("notDelivered")}: {failure}
         </p>
+      )}
+      {isAgent && onRetry && canRetry(message) && (
+        <button
+          type="button"
+          onClick={() => onRetry(message)}
+          className="mt-1 text-xs text-primary underline underline-offset-2"
+        >
+          {message.retry_class === "delivery_unknown" ? t("sendAnyway") : t("retrySend")}
+        </button>
       )}
       {reactions && reactions.length > 0 && onToggleReaction && (
         <MessageReactions

@@ -235,7 +235,7 @@ vi.mock('@supabase/supabase-js', () => ({
 }))
 
 vi.mock('@/lib/whatsapp/encryption', () => ({
-  decrypt: () => 'plain-token',
+  decrypt: vi.fn(() => 'plain-token'),
   encrypt: (v: string) => v,
   isLegacyFormat: () => false,
 }))
@@ -280,12 +280,14 @@ vi.mock('@/lib/whatsapp/message-status-sync', () => ({
 import { POST } from './route'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { findExistingContact } from '@/lib/contacts/dedupe'
+import { decrypt } from '@/lib/whatsapp/encryption'
 import { handleTemplateWebhookChange } from '@/lib/whatsapp/template-webhook'
 import { MAX_WEBHOOK_BODY_BYTES } from '@/lib/whatsapp/webhook-body'
 
 const mockGetMediaUrl = vi.mocked(getMediaUrl)
 const mockDownloadMedia = vi.mocked(downloadMedia)
 const mockFindExistingContact = vi.mocked(findExistingContact)
+const mockDecrypt = vi.mocked(decrypt)
 
 const TEXT_MESSAGE = {
   id: 'wamid.TEST1',
@@ -386,10 +388,12 @@ beforeEach(() => {
     name: 'Ada',
     phone: '15551230000',
   })
+  mockDecrypt.mockReturnValue('plain-token')
   mockGetMediaUrl.mockResolvedValue({
     url: 'https://lookaside.fbsbx.com/whatsapp/abc',
     mimeType: 'image/jpeg',
     fileSize: 2048,
+    sha256: null,
   })
   mockDownloadMedia.mockResolvedValue({
     buffer: Buffer.alloc(2048),
@@ -567,11 +571,24 @@ describe('inbound webhook: inbound media is mirrored (#466)', () => {
     })
   })
 
+  it('keeps the media id so a failed lookup stays recoverable', async () => {
+    mockGetMediaUrl.mockRejectedValueOnce(new Error('Meta unavailable'))
+
+    await runWebhook(IMAGE_MESSAGE)
+
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      media_url: null,
+      media_id: '1234567890123456',
+      media_type: 'image/jpeg',
+    })
+  })
+
   it('skips media larger than the bucket accepts, without downloading it', async () => {
     mockGetMediaUrl.mockResolvedValue({
       url: 'https://lookaside.fbsbx.com/whatsapp/big',
       mimeType: 'application/pdf',
       fileSize: 40 * 1024 * 1024,
+      sha256: null,
     })
 
     await runWebhook({
@@ -599,6 +616,7 @@ describe('inbound webhook: inbound media is mirrored (#466)', () => {
       url: 'https://lookaside.fbsbx.com/whatsapp/doc',
       mimeType: 'application/pdf',
       fileSize: 4096,
+      sha256: null,
     })
     mockDownloadMedia.mockResolvedValue({
       buffer: Buffer.alloc(4096),
@@ -1171,5 +1189,98 @@ describe('inbound webhook: first_inbound_message fires once', () => {
     h.state.messageUpsertResult = []
     await runWebhook()
     expect(h.state.firstInboundClaims).toBe(0)
+  })
+})
+
+describe('inbound webhook: failures stay contained to one item', () => {
+  const twoMessages = () =>
+    signedPost(
+      JSON.stringify({
+        entry: [
+          {
+            changes: [
+              {
+                field: 'messages',
+                value: {
+                  metadata: { phone_number_id: 'pn-1' },
+                  contacts: LEGACY_CONTACTS,
+                  messages: [
+                    { ...TEXT_MESSAGE, id: 'wamid.FIRST' },
+                    { ...TEXT_MESSAGE, id: 'wamid.SECOND' },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    )
+
+  it('still processes later messages when an earlier one throws', async () => {
+    mockFindExistingContact.mockRejectedValueOnce(new Error('connection reset'))
+
+    await POST(twoMessages())
+    for (const cb of h.state.afterCallbacks) await cb()
+
+    expect(h.state.upsertCalls).toHaveLength(1)
+    expect(h.state.upsertCalls[0].row).toMatchObject({ message_id: 'wamid.SECOND' })
+  })
+
+  it('still stores the message text when the access token cannot be decrypted', async () => {
+    mockDecrypt.mockImplementationOnce(() => {
+      throw new Error('bad key')
+    })
+
+    await runWebhook()
+
+    expect(h.state.upsertCalls).toHaveLength(1)
+    expect(h.state.upsertCalls[0].row).toMatchObject({ content_text: 'hello' })
+  })
+
+  it('does not call Meta for media when the access token cannot be decrypted', async () => {
+    mockDecrypt.mockImplementationOnce(() => {
+      throw new Error('bad key')
+    })
+
+    await runWebhook({
+      id: 'wamid.IMG2',
+      from: '15551230000',
+      timestamp: '1700000000',
+      type: 'image',
+      image: { id: '777', mime_type: 'image/jpeg' },
+    })
+
+    expect(mockGetMediaUrl).not.toHaveBeenCalled()
+    expect(h.state.upsertCalls[0].row).toMatchObject({ media_url: null, media_id: '777' })
+  })
+
+  it('still processes later statuses when an earlier one throws', async () => {
+    h.applyMessageStatus.mockRejectedValueOnce(new Error('connection reset'))
+
+    await POST(
+      signedPost(
+        JSON.stringify({
+          entry: [
+            {
+              changes: [
+                {
+                  field: 'messages',
+                  value: {
+                    metadata: { phone_number_id: 'pn-1' },
+                    statuses: [
+                      { id: 'wamid.A', status: 'sent', timestamp: '1700000000', recipient_id: '1' },
+                      { id: 'wamid.B', status: 'sent', timestamp: '1700000000', recipient_id: '1' },
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    )
+    for (const cb of h.state.afterCallbacks) await cb()
+
+    expect(h.applyMessageStatus).toHaveBeenCalledTimes(2)
   })
 })

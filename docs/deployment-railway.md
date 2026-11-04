@@ -68,12 +68,11 @@ Never paste any of these into the repo. They go in the Railway dashboard
 3. If the Next.js app lives in a subdirectory of the repo (e.g. `wacrm/`),
    open the service → **Settings** → set **Root Directory** to that
    subdirectory so `railway.json` and `package.json` are found.
-4. Railway auto-detects Next.js via Nixpacks and reads `railway.json` for
-   the build (`npm ci && npm run build`) and start (`npm run start`)
-   commands. Don't override them.
+4. Railway reads `railway.json`, which builds with the repo's `Dockerfile`.
+   Don't override the build or start commands.
 
-Railway injects a `PORT` env var at runtime; `next start` binds to it
-automatically — no extra configuration needed.
+Railway injects a `PORT` env var at runtime, and the standalone server binds to
+it automatically — no extra configuration needed.
 
 ---
 
@@ -113,9 +112,10 @@ hand — the `NEXT_PUBLIC_*` prefix already controls client exposure.
 Trigger the deploy (Railway does this automatically on connect, and on
 every push to the connected branch). Watch the build logs:
 
-1. `npm ci` installs dependencies.
-2. `npm run build` runs the Next.js production build (includes typecheck).
-3. `npm run start` boots the server.
+1. `npm ci` installs dependencies inside the Docker build.
+2. `npm run build` runs the Next.js production build (includes typecheck), and
+   `npm run build:worker` bundles the background worker.
+3. `node server.js` boots the server.
 
 When it's live, Railway gives you a `*.up.railway.app` URL. Open it and
 confirm the login page renders.
@@ -193,6 +193,105 @@ your interval. Every 1–5 minutes is typical.
       (confirms the webhook reaches `/api/whatsapp/webhook`).
 - [ ] A manual `curl` to `/api/automations/cron` with the secret header
       returns `200` (cron path healthy).
+
+---
+
+## 8. Reliability rollout: worker, migrations and flags
+
+Durable webhooks, media jobs and persist-first sending are each behind a flag that
+is off by default. Merging the code changes no behaviour except the small fixes
+listed in `WACRM_RELIABILITY_VERIFICATION.md`. Turn the features on one at a time.
+
+> **Migration 060 is the exception: apply it before merging.** The webhook writes
+> `messages.media_id` on every inbound message regardless of flags. Without the
+> column, inbound messages fail to save.
+
+**No Redis is needed.** Jobs live in Postgres, so Railway needs no new database.
+
+### Required environment variables
+
+| Variable                   | Services    | Purpose                                                |
+| -------------------------- | ----------- | ------------------------------------------------------ |
+| `WEBHOOK_DURABLE_INTAKE`   | web, worker | `true` saves webhook payloads before acknowledging     |
+| `OUTBOUND_PERSIST_FIRST`   | web, worker | `true` saves outbound messages before calling Meta     |
+| `MEDIA_JOBS_ENABLED`       | web, worker | `true` stores inbound media in R2 through jobs         |
+| `R2_ACCOUNT_ID`            | web, worker | Cloudflare account ID                                  |
+| `R2_ACCESS_KEY_ID`         | web, worker | R2 API token access key (server secret)                |
+| `R2_SECRET_ACCESS_KEY`     | web, worker | R2 API token secret (server secret)                    |
+| `R2_BUCKET`                | web, worker | Bucket name. Keep it private, with no public access    |
+| `MEDIA_WORKER_CONCURRENCY` | worker      | Downloads in progress at once. Defaults to 3           |
+
+The worker also needs what the app already uses: `NEXT_PUBLIC_SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`, `ENCRYPTION_KEY`, plus any AI or automation settings,
+because recovering a webhook runs the same flows and automations as the web service.
+
+### Create the worker service
+
+1. In the same project: **New** → **GitHub Repo** → this repository.
+2. Service → **Settings** → **Config-as-code**: set the path to
+   `/railway.worker.json`. It uses the same image and runs `node worker.cjs`.
+3. Copy the variables above. Build arguments need the same `NEXT_PUBLIC_*` values
+   as the web service.
+4. Deploy, then check its **Deploy Logs** for a `worker.started` line listing the
+   tasks it's running. It doesn't serve HTTP, so it needs no domain.
+
+### Staging (only if you want one)
+
+A second Railway environment on a **separate Supabase project and R2 bucket**, with
+its own Meta test number pointed at the staging webhook URL. Never share production's
+Supabase project: the worker would claim production jobs.
+
+### Production rollout, one step at a time
+
+Do each step, watch the report for a day, then move on. For the report:
+
+```bash
+curl -H "x-cron-secret: $AUTOMATION_CRON_SECRET" "$APP_URL/api/internal/reliability?hours=24"
+```
+
+- [ ] **Step 0: ship the code, all flags off.** Apply migration 060 in the Supabase
+      SQL editor, then merge. Send and receive a message and a photo.
+- [ ] **Step 1: durable webhooks.** Apply 061. Create the worker. Set
+      `WEBHOOK_DURABLE_INTAKE=true` on both services. Check rows reach `done`, and
+      `webhook.failed` stays at 0.
+- [ ] **Step 2: outbound.** Apply 063. Set `OUTBOUND_PERSIST_FIRST=true` on both.
+      Send one of each type from the inbox. Check bubbles reach sent and delivered,
+      and force a failure by messaging an invalid number.
+- [ ] **Step 3: media.** Create a private R2 bucket and API token. Apply 062. Set the
+      `R2_*` variables, then `MEDIA_JOBS_ENABLED=true` on both. Send a photo and a
+      large PDF. Check `media_jobs.status` reaches `stored`, and that the object can't
+      be opened without logging in.
+
+### Rollback
+
+- **A feature misbehaves:** set its flag to anything but `true` on both services and
+  restart. The previous code path takes over.
+- **A bad deploy:** redeploy the previous build in Railway. All these migrations only
+  add things, so the old code still runs against the new schema.
+- **Don't drop the new tables or columns during an incident.** `media_jobs` is the
+  only record of where R2 copies are.
+- **After turning media jobs off:** messages stored in R2 fall back to fetching from
+  Meta, and stop working once Meta's retention ends. Turn it back on to recover them,
+  because the objects stay in R2.
+- **The worker can be stopped at any time.** Work stays queued and resumes on restart.
+  With `OUTBOUND_PERSIST_FIRST` on, stopped means no automatic retries and no flagging
+  of stuck sends, so don't leave it stopped for long.
+
+### What to watch
+
+Searching Deploy Logs by event name:
+
+| Event                        | Meaning                                                |
+| ---------------------------- | ------------------------------------------------------ |
+| `webhook.persist_failed`     | Meta got a 503 and will redeliver. Look at the database |
+| `webhook.event_failed`       | A delivery used up its retries. Read `last_error`      |
+| `outbound.engagement_limit`  | A 131049                                               |
+| `outbound.generic_failure`   | A 131000                                               |
+| `outbound.retries_exhausted` | A 131000 outlasted its retries, and an agent must act  |
+| `outbound.delivery_unknown`  | Sends flagged for a person after a process died        |
+| `media.retry`                | With `failure: rate_limited`, a 429 from Meta          |
+| `media.failed`               | A file used up its retries, or is too large            |
+| `auth.refresh_failed`        | A session could not be renewed                         |
 
 ---
 

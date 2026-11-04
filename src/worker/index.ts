@@ -7,7 +7,11 @@ import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { downloadToFile } from '@/lib/media-jobs/download-to-file';
 import { processMediaJob, type MediaJobDeps } from '@/lib/media-jobs/process';
 import { claimMediaJobs, type MediaJobRow } from '@/lib/media-jobs/queue';
-import { mediaStorageFromEnv } from '@/lib/media-jobs/r2-storage';
+import {
+  mediaStorageFromEnv,
+  verifyMediaStorage,
+  type MediaStorage,
+} from '@/lib/media-jobs/r2-storage';
 import { logEvent } from '@/lib/observability/log';
 import {
   durableWebhookIntakeEnabled,
@@ -57,11 +61,31 @@ async function loadAccessToken(accountId: string): Promise<string | null> {
   }
 }
 
-function mediaTask(): RecurringTask {
+/**
+ * The storage to use, or null if it isn't usable. In that case jobs stay queued,
+ * untouched, rather than burning their retries on a settings problem, and files
+ * keep being served from Meta. Changing a variable redeploys the worker, which
+ * runs this check again.
+ */
+async function usableMediaStorage(): Promise<MediaStorage | null> {
   const storage = mediaStorageFromEnv();
   if (!storage) {
-    throw new Error('MEDIA_JOBS_ENABLED is on, but the R2_* settings are incomplete');
+    logEvent('error', 'media.storage_check_failed', {
+      reason: 'the R2_* settings are incomplete',
+    });
+    return null;
   }
+  try {
+    await verifyMediaStorage(storage, STAGE_DIR);
+    logEvent('info', 'media.storage_check_passed', {});
+    return storage;
+  } catch (error) {
+    logEvent('error', 'media.storage_check_failed', { error });
+    return null;
+  }
+}
+
+function mediaTask(storage: MediaStorage): RecurringTask {
   const deps: MediaJobDeps = {
     db: supabaseAdmin(),
     storage,
@@ -117,11 +141,14 @@ async function main(): Promise<void> {
     );
   }
   if (mediaJobsEnabled()) {
-    tasks.push(mediaTask(), {
-      name: 'stage-cleanup',
-      intervalMs: 3_600_000,
-      run: () => cleanStageDir(),
-    });
+    const storage = await usableMediaStorage();
+    if (storage) {
+      tasks.push(mediaTask(storage), {
+        name: 'stage-cleanup',
+        intervalMs: 3_600_000,
+        run: () => cleanStageDir(),
+      });
+    }
   }
   if (outboundPersistFirstEnabled()) {
     tasks.push({

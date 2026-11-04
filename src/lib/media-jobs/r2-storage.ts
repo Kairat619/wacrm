@@ -1,4 +1,6 @@
 import { openAsBlob } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { AwsClient } from 'aws4fetch';
 
@@ -10,8 +12,20 @@ export interface MediaStorage {
     options: { contentType: string }
   ): Promise<void>;
   /** Returns null when the object does not exist. */
-  get(key: string): Promise<{ body: ReadableStream<Uint8Array>; contentType: string | null } | null>;
+  get(key: string, options?: { range?: string | null }): Promise<StoredObject | null>;
 }
+
+export interface StoredObject {
+  body: ReadableStream<Uint8Array>;
+  contentType: string | null;
+  /** 206 when a range was requested and honoured, otherwise 200. */
+  status: number;
+  contentLength: string | null;
+  contentRange: string | null;
+}
+
+/** A single byte range is all a media element asks for. Anything else is ignored. */
+const RANGE_PATTERN = /^bytes=\d*-\d*$/;
 
 export class StorageError extends Error {
   readonly httpStatus: number | null;
@@ -78,8 +92,10 @@ export function createR2Storage(config: R2Config): MediaStorage {
       }
     },
 
-    async get(key) {
+    async get(key, options) {
+      const range = options?.range;
       const response = await client.fetch(urlFor(key), {
+        headers: range && RANGE_PATTERN.test(range) ? { Range: range } : {},
         signal: AbortSignal.timeout(READ_TIMEOUT_MS),
       });
       if (response.status === 404) return null;
@@ -89,9 +105,39 @@ export function createR2Storage(config: R2Config): MediaStorage {
       return {
         body: response.body,
         contentType: response.headers.get('content-type'),
+        status: response.status,
+        contentLength: response.headers.get('content-length'),
+        contentRange: response.headers.get('content-range'),
       };
     },
   };
+}
+
+const STORAGE_CHECK_KEY = '_healthcheck/worker';
+
+/**
+ * Prove the settings work by writing an object and reading it back. Throws if not.
+ * Run at worker start, because otherwise bad credentials are only discovered by
+ * failing real customer files until each one has used up its retries.
+ */
+export async function verifyMediaStorage(
+  storage: MediaStorage,
+  tempDir: string,
+  now: number = Date.now()
+): Promise<void> {
+  const dir = await mkdtemp(join(tempDir, 'storage-check-'));
+  const file = join(dir, 'probe');
+  const content = `storage check ${now}`;
+  try {
+    await writeFile(file, content);
+    await storage.put(STORAGE_CHECK_KEY, file, { contentType: 'text/plain' });
+    const object = await storage.get(STORAGE_CHECK_KEY);
+    if (!object) throw new StorageError('storage check object was not found');
+    const read = await new Response(object.body).text();
+    if (read !== content) throw new StorageError('storage check read back different bytes');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 let cached: MediaStorage | null | undefined;

@@ -257,10 +257,14 @@ curl -H "x-cron-secret: $AUTOMATION_CRON_SECRET" "$APP_URL/api/internal/reliabil
 - [ ] **Step 2: outbound.** Apply 063. Set `OUTBOUND_PERSIST_FIRST=true` on both.
       Send one of each type from the inbox. Check bubbles reach sent and delivered,
       and force a failure by messaging an invalid number.
-- [ ] **Step 3: media.** Create a private R2 bucket and API token. Apply 062. Set the
-      `R2_*` variables, then `MEDIA_JOBS_ENABLED=true` on both. Send a photo and a
-      large PDF. Check `media_jobs.status` reaches `stored`, and that the object can't
-      be opened without logging in.
+- [ ] **Step 3: media.** Can go before steps 1 and 2, as long as the worker exists.
+      Create a private R2 bucket and API token. Apply 062. Set the `R2_*` variables and
+      `MEDIA_JOBS_ENABLED=true` on the worker, and confirm its logs show
+      `media.storage_check_passed`. Only then set the same variables on the web service.
+      Send a photo, a large PDF and a video. Check `media_jobs.status` reaches `stored`,
+      and that the video plays and seeks. Without step 1, a crash at the wrong moment
+      can still lose a message or its job; the file is then fetched from Meta until it
+      expires.
 
 ### Rollback
 
@@ -291,6 +295,7 @@ Searching Deploy Logs by event name:
 | `outbound.delivery_unknown`  | Sends flagged for a person after a process died        |
 | `media.retry`                | With `failure: rate_limited`, a 429 from Meta          |
 | `media.failed`               | A file used up its retries, or is too large            |
+| `media.storage_check_failed` | R2 settings are wrong. Jobs wait, and nothing is lost  |
 | `auth.refresh_failed`        | A session could not be renewed                         |
 
 ---

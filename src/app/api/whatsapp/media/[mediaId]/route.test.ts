@@ -9,7 +9,14 @@ const h = vi.hoisted(() => ({
   downloadError: null as Error | null,
   metaCalls: 0,
   job: null as { status: string; storage_key: string | null; content_type: string | null } | null,
-  object: null as { body: ReadableStream<Uint8Array>; contentType: string | null } | null,
+  object: null as {
+    body: ReadableStream<Uint8Array>
+    contentType: string | null
+    status?: number
+    contentLength?: string | null
+    contentRange?: string | null
+  } | null,
+  storageRange: undefined as string | null | undefined,
   storageError: null as Error | null,
 }))
 
@@ -19,7 +26,8 @@ vi.mock('@/lib/media-jobs/queue', () => ({
 }))
 vi.mock('@/lib/media-jobs/r2-storage', () => ({
   mediaStorageFromEnv: () => ({
-    get: async () => {
+    get: async (_key: string, options?: { range?: string | null }) => {
+      h.storageRange = options?.range
       if (h.storageError) throw h.storageError
       return h.object
     },
@@ -111,6 +119,7 @@ beforeEach(() => {
   h.job = null
   h.object = null
   h.storageError = null
+  h.storageRange = undefined
   delete process.env.MEDIA_JOBS_ENABLED
 })
 
@@ -201,7 +210,7 @@ describe('GET /api/whatsapp/media/[mediaId]', () => {
 
     it('serves a stored file from R2 without calling Meta', async () => {
       h.job = { status: 'stored', storage_key: 'k', content_type: 'image/png' }
-      h.object = { body: bytes(), contentType: 'image/png' }
+      h.object = { body: bytes(), contentType: 'image/png', status: 200 }
 
       const res = await call()
 
@@ -212,10 +221,34 @@ describe('GET /api/whatsapp/media/[mediaId]', () => {
       expect(h.metaCalls).toBe(0)
     })
 
+    it('honours a range request, which video playback depends on', async () => {
+      h.job = { status: 'stored', storage_key: 'k', content_type: 'video/mp4' }
+      h.object = {
+        body: bytes(),
+        contentType: 'video/mp4',
+        status: 206,
+        contentLength: '8',
+        contentRange: 'bytes 0-7/100',
+      }
+
+      const res = await GET(
+        new Request('http://localhost/api/whatsapp/media/1', {
+          headers: { range: 'bytes=0-7' },
+        }),
+        { params: Promise.resolve({ mediaId: '1' }) },
+      )
+
+      expect(h.storageRange).toBe('bytes=0-7')
+      expect(res.status).toBe(206)
+      expect(res.headers.get('content-range')).toBe('bytes 0-7/100')
+      expect(res.headers.get('content-length')).toBe('8')
+      expect(res.headers.get('accept-ranges')).toBe('bytes')
+    })
+
     it('still requires a signed-in caller before serving from R2', async () => {
       h.user = null
       h.job = { status: 'stored', storage_key: 'k', content_type: 'image/png' }
-      h.object = { body: bytes(), contentType: 'image/png' }
+      h.object = { body: bytes(), contentType: 'image/png', status: 200 }
 
       expect((await call()).status).toBe(401)
     })

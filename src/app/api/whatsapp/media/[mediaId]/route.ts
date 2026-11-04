@@ -63,7 +63,11 @@ export async function GET(
 
     // Our own copy first: it needs no Meta call and outlives Meta's retention.
     if (mediaJobsEnabled()) {
-      const stored = await serveFromStorage(accountId, mediaId)
+      const stored = await serveFromStorage(
+        accountId,
+        mediaId,
+        request.headers.get('range')
+      )
       if (stored) return stored
     }
 
@@ -144,7 +148,8 @@ export async function GET(
  */
 async function serveFromStorage(
   accountId: string,
-  mediaId: string
+  mediaId: string,
+  range: string | null
 ): Promise<Response | null> {
   try {
     const job = await findMediaJob(supabaseAdmin(), accountId, mediaId)
@@ -155,14 +160,20 @@ async function serveFromStorage(
       )
     }
     if (job?.status !== 'stored' || !job.storage_key) return null
-    const object = await mediaStorageFromEnv()?.get(job.storage_key)
+    const object = await mediaStorageFromEnv()?.get(job.storage_key, { range })
     if (!object) return null
     return new Response(object.body, {
-      status: 200,
-      headers: mediaProxyHeaders(
-        mediaId,
-        job.content_type ?? object.contentType ?? 'application/octet-stream'
-      ),
+      status: object.status,
+      headers: {
+        ...mediaProxyHeaders(
+          mediaId,
+          job.content_type ?? object.contentType ?? 'application/octet-stream'
+        ),
+        // Safari won't play video without these, and seeking depends on them.
+        'Accept-Ranges': 'bytes',
+        ...(object.contentLength ? { 'Content-Length': object.contentLength } : {}),
+        ...(object.contentRange ? { 'Content-Range': object.contentRange } : {}),
+      },
     })
   } catch (error) {
     logEvent('warn', 'media.storage_read_failed', { media_id: mediaId, error })

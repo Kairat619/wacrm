@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // Shared, hoisted state the module mocks close over. Reset per test.
 const h = vi.hoisted(() => ({
@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   dispatchInboundToAiReply: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
   applyMessageStatus: vi.fn(),
+  enqueueMediaJob: vi.fn(),
   state: {
     // Result the message upsert's .select() resolves to. A genuine insert
     // returns the row; a replayed delivery conflicts and returns [].
@@ -234,6 +235,7 @@ vi.mock('@supabase/supabase-js', () => ({
   }),
 }))
 
+vi.mock('@/lib/media-jobs/queue', () => ({ enqueueMediaJob: h.enqueueMediaJob }))
 vi.mock('@/lib/whatsapp/encryption', () => ({
   decrypt: vi.fn(() => 'plain-token'),
   encrypt: (v: string) => v,
@@ -1282,5 +1284,84 @@ describe('inbound webhook: failures stay contained to one item', () => {
     for (const cb of h.state.afterCallbacks) await cb()
 
     expect(h.applyMessageStatus).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('inbound webhook: media jobs on', () => {
+  const IMAGE = {
+    id: 'wamid.JOB1',
+    from: '15551230000',
+    timestamp: '1700000000',
+    type: 'image',
+    image: { id: '4242', mime_type: 'image/jpeg' },
+  }
+
+  beforeEach(() => {
+    process.env.MEDIA_JOBS_ENABLED = 'true'
+    h.enqueueMediaJob.mockReset()
+    h.enqueueMediaJob.mockResolvedValue(undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    delete process.env.MEDIA_JOBS_ENABLED
+    vi.restoreAllMocks()
+  })
+
+  it('saves the message without calling Meta, then creates one job', async () => {
+    await runWebhook(IMAGE)
+
+    expect(mockGetMediaUrl).not.toHaveBeenCalled()
+    expect(h.state.storageUploads).toHaveLength(0)
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      media_url: '/api/whatsapp/media/4242',
+      media_id: '4242',
+    })
+    expect(h.enqueueMediaJob).toHaveBeenCalledTimes(1)
+    expect(h.enqueueMediaJob.mock.calls[0][1]).toMatchObject({
+      accountId: 'acc-1',
+      messageRowId: 'msg-1',
+      mediaId: '4242',
+    })
+  })
+
+  it('still runs flows, automations and webhooks when the job cannot be created', async () => {
+    h.enqueueMediaJob.mockRejectedValueOnce(new Error('media_jobs unavailable'))
+
+    await runWebhook(IMAGE)
+
+    expect(h.dispatchInboundToFlows).toHaveBeenCalledTimes(1)
+    expect(h.runAutomationsForTrigger).toHaveBeenCalled()
+    expect(h.dispatchWebhookEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      'acc-1',
+      'message.received',
+      expect.anything(),
+    )
+  })
+
+  it('creates the job on a replay, healing a failed first attempt', async () => {
+    h.state.messageUpsertResult = []
+    h.state.replyContextParent = { id: 'existing-row' }
+
+    await runWebhook(IMAGE)
+
+    expect(h.enqueueMediaJob).toHaveBeenCalledTimes(1)
+    expect(h.enqueueMediaJob.mock.calls[0][1]).toMatchObject({ messageRowId: 'existing-row' })
+    expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
+  })
+
+  it('creates no job for an account that opted out of keeping media', async () => {
+    h.state.mirrorInboundMedia = false
+
+    await runWebhook(IMAGE)
+
+    expect(h.enqueueMediaJob).not.toHaveBeenCalled()
+  })
+
+  it('creates no job for a text message', async () => {
+    await runWebhook()
+
+    expect(h.enqueueMediaJob).not.toHaveBeenCalled()
   })
 })

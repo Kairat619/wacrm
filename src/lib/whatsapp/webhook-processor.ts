@@ -655,8 +655,17 @@ async function processMessage(
     return
   }
 
+  // Remembered, not thrown yet: the message is saved, so flows, automations and
+  // the AI reply must still run. A replay can't run them later, because it stops
+  // at the duplicate check above. It can create the job, though, which is why this
+  // is reported at the end of the function.
+  let enqueueFailure: unknown = null
   if (mediaJobsEnabled() && mirrorMedia && mediaId) {
-    await enqueueInboundMedia(accountId, insertedRows[0].id, mediaId, mediaType, message)
+    try {
+      await enqueueInboundMedia(accountId, insertedRows[0].id, mediaId, mediaType, message)
+    } catch (error) {
+      enqueueFailure = error
+    }
   }
 
   const isFirstInboundMessage = await claimFirstInboundMessage(
@@ -845,6 +854,8 @@ async function processMessage(
     content_type: contentType,
     text: contentText,
   })
+
+  if (enqueueFailure) throw enqueueFailure
 }
 
 async function enqueueInboundMedia(

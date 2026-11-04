@@ -117,6 +117,7 @@
   },
   "auth": {
     "login": {
+      "sessionExpired": "Your session ended. Sign in again to continue where you left off.",
       "title": "Welcome back",
       "titleInvite": "Sign in to accept",
       "description": "Sign in to your account",
@@ -1682,6 +1683,10 @@
       "noCustomerMessages": "No customer messages"
     },
     "bubble": {
+      "retrySend": "Try again",
+      "sendAnyway": "Send anyway",
+      "engagementRestricted": "WhatsApp limited this message because of how many marketing messages this person has recently received. Resending won't help; try again later, or wait for them to reply.",
+      "deliveryUnknown": "We couldn't confirm whether this was delivered. Check with the customer first: sending again may give them two copies.",
       "photo": "Photo",
       "video": "Video",
       "audio": "Audio",

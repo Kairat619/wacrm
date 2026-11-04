@@ -69,6 +69,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   confirmedSendUpdate,
+  failedSendUpdate,
   isTempMessage,
   newTempMessageId,
 } from "@/lib/inbox/optimistic-messages";
@@ -613,6 +614,7 @@ export function MessageThread({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            client_request_id: crypto.randomUUID(),
             conversation_id: conversation.id,
             message_type: "text",
             content_text: text,
@@ -627,7 +629,7 @@ export function MessageThread({
           console.error("Failed to send message:", reason);
           toast.error(t("sendFailed", { reason }));
           // Mark the optimistic bubble as failed so the user sees what happened
-          onUpdateMessage(tempId, { status: "failed" });
+          onUpdateMessage(tempId, failedSendUpdate(payload));
           return;
         }
 
@@ -677,6 +679,7 @@ export function MessageThread({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            client_request_id: crypto.randomUUID(),
             conversation_id: conversation.id,
             message_type: payload.kind,
             media_url: payload.mediaUrl,
@@ -692,10 +695,13 @@ export function MessageThread({
           const reason = data?.error || `HTTP ${res.status}`;
           console.error("Failed to send media:", reason);
           toast.error(t("sendFailed", { reason }));
-          onUpdateMessage(tempId, { status: "failed" });
+          onUpdateMessage(tempId, failedSendUpdate(data));
           // The upload never reached the recipient — GC the orphaned
-          // object rather than leaving it in the public bucket forever.
-          void deleteAccountMedia(CHAT_MEDIA_BUCKET, payload.path).catch(() => {});
+          // object rather than leaving it in the public bucket forever. A
+          // saved row can still be retried, and it needs the file for that.
+          if (!data?.message_id) {
+            void deleteAccountMedia(CHAT_MEDIA_BUCKET, payload.path).catch(() => {});
+          }
           return;
         }
 
@@ -705,7 +711,8 @@ export function MessageThread({
         const reason = err instanceof Error ? err.message : t("networkError");
         toast.error(t("sendFailed", { reason }));
         onUpdateMessage(tempId, { status: "failed" });
-        void deleteAccountMedia(CHAT_MEDIA_BUCKET, payload.path).catch(() => {});
+        // The file stays: the request may have reached the server, in which
+        // case Meta may be showing it to the customer right now.
       }
     },
     [conversation, onNewMessage, onUpdateMessage, t],
@@ -736,6 +743,7 @@ export function MessageThread({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            client_request_id: crypto.randomUUID(),
             conversation_id: conversation.id,
             message_type: "interactive",
             interactive_payload: payload,
@@ -749,7 +757,7 @@ export function MessageThread({
           const reason = data?.error || `HTTP ${res.status}`;
           console.error("Failed to send interactive message:", reason);
           toast.error(t("sendFailed", { reason }));
-          onUpdateMessage(tempId, { status: "failed" });
+          onUpdateMessage(tempId, failedSendUpdate(data));
           return;
         }
 
@@ -815,6 +823,7 @@ export function MessageThread({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            client_request_id: crypto.randomUUID(),
             conversation_id: conversation.id,
             message_type: "template",
             template_name: template.name,
@@ -839,7 +848,7 @@ export function MessageThread({
           const reason = payload?.error || `HTTP ${res.status}`;
           console.error("Failed to send template:", reason);
           toast.error(t("sendTemplateFailed", { reason }));
-          onUpdateMessage(tempId, { status: "failed" });
+          onUpdateMessage(tempId, failedSendUpdate(payload));
           return;
         }
 
@@ -852,6 +861,43 @@ export function MessageThread({
       }
     },
     [conversation, onNewMessage, onUpdateMessage, t],
+  );
+
+  const handleRetryMessage = useCallback(
+    async (message: Message) => {
+      const previous: Partial<Message> = {
+        status: message.status,
+        retry_class: message.retry_class,
+      };
+      onUpdateMessage(message.id, { status: "sending" });
+      try {
+        const res = await fetch(`/api/whatsapp/messages/${message.id}/retry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            // Only reachable from the button labelled "Send anyway".
+            confirm_possible_duplicate: message.retry_class === "delivery_unknown",
+          }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(t("sendFailed", { reason: payload?.error || `HTTP ${res.status}` }));
+          onUpdateMessage(
+            message.id,
+            payload?.retry_class
+              ? { status: "failed", retry_class: payload.retry_class }
+              : previous,
+          );
+          return;
+        }
+        onUpdateMessage(message.id, { status: "sent", retry_class: null });
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : t("networkError");
+        toast.error(t("sendFailed", { reason }));
+        onUpdateMessage(message.id, previous);
+      }
+    },
+    [onUpdateMessage, t],
   );
 
   // Build a quick id → Message map so reply quotes can be rendered without
@@ -1303,6 +1349,7 @@ export function MessageThread({
                           reactions={msgReactions}
                           onToggleReaction={handlePillToggle}
                           onOpenMedia={handleMediaChange}
+                          onRetry={handleRetryMessage}
                         />
                       </MessageActions>
                       </div>

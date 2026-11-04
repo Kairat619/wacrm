@@ -230,7 +230,7 @@ export type ContentType =
   | 'template'
   /** Customer tapped a reply button or list row on a message we sent. */
   | 'interactive';
-export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+export type MessageStatus = 'queued' | 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface Message {
   id: string;
@@ -246,6 +246,12 @@ export interface Message {
    * Null on every row written before migration 039.
    */
   media_type?: string | null;
+  /**
+   * Meta's media id for an inbound attachment. Kept separately from
+   * `media_url` so media that could not be fetched on arrival can still be
+   * recovered while Meta holds it. Migration 060.
+   */
+  media_id?: string | null;
   template_name?: string;
   message_id?: string;
   status: MessageStatus;
@@ -280,6 +286,14 @@ export interface Message {
   error_code?: number | null;
   error_title?: string | null;
   error_details?: string | null;
+  /**
+   * What may happen after a failure: `auto` (the worker retries), `manual` (an
+   * agent may retry), `no_retry` (retrying can't help) or `delivery_unknown`
+   * (Meta may have delivered it). Migration 063.
+   */
+  retry_class?: 'auto' | 'manual' | 'no_retry' | 'delivery_unknown' | null;
+  /** Saved request to resend. Present only on persist-first rows. Migration 063. */
+  send_params?: unknown;
 }
 
 export type ReactionActor = 'customer' | 'agent';

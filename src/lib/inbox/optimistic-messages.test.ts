@@ -4,6 +4,7 @@ import {
   applyMessageUpdate,
   applyRealtimeInsert,
   confirmedSendUpdate,
+  failedSendUpdate,
   isTempMessage,
   mergeFetchedPage,
   newTempMessageId,
@@ -99,6 +100,29 @@ describe("applyMessageUpdate", () => {
     expect(ids(next)).toEqual(["real-1"]);
   });
 
+  it("updates a saved row still waiting on its send, in case its realtime update was dropped", () => {
+    const prev = [msg("real-1", { status: "queued" }), msg("temp-1", { status: "sending" })];
+    const next = applyMessageUpdate(prev, "temp-1", { id: "real-1", status: "sent" });
+    expect(next.map((m) => [m.id, m.status])).toEqual([["real-1", "sent"]]);
+  });
+
+  it("does not move a row backwards when its confirmation arrives late", () => {
+    const prev = [msg("real-1", { status: "delivered" }), msg("temp-1", { status: "sending" })];
+    const next = applyMessageUpdate(prev, "temp-1", { id: "real-1", status: "sent" });
+    expect(next.map((m) => [m.id, m.status])).toEqual([["real-1", "delivered"]]);
+  });
+
+  it("carries a saved failure onto the row", () => {
+    const prev = [msg("real-1", { status: "sending" }), msg("temp-1", { status: "sending" })];
+    const next = applyMessageUpdate(
+      prev,
+      "temp-1",
+      failedSendUpdate({ message_id: "real-1", status: "failed", retry_class: "no_retry" }),
+    );
+    expect(next).toHaveLength(1);
+    expect(next[0]).toMatchObject({ id: "real-1", status: "failed", retry_class: "no_retry" });
+  });
+
   it("patches status without an id change", () => {
     const prev = [msg("temp-1", { status: "sending" })];
     expect(applyMessageUpdate(prev, "temp-1", { status: "failed" })[0].status).toBe("failed");
@@ -176,5 +200,18 @@ describe("prependOlderMessages", () => {
   it("returns the same list when nothing is new", () => {
     const prev = [msg("a")];
     expect(prependOlderMessages(prev, [msg("a")])).toBe(prev);
+  });
+});
+
+describe("failedSendUpdate", () => {
+  it("stays on the temp bubble when the server saved nothing", () => {
+    expect(failedSendUpdate({ error: "nope" })).toEqual({ status: "failed" });
+    expect(failedSendUpdate(null)).toEqual({ status: "failed" });
+  });
+
+  it("becomes the saved row, showing it as queued while a retry is pending", () => {
+    expect(
+      failedSendUpdate({ message_id: "m1", status: "queued", retry_class: "auto" }),
+    ).toMatchObject({ id: "m1", status: "queued", retry_class: "auto" });
   });
 });

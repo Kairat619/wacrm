@@ -124,6 +124,7 @@ export async function POST(request: Request) {
           typeof body.reply_to_message_id === 'string'
             ? body.reply_to_message_id
             : null,
+        clientRequestId: request.headers.get('idempotency-key')?.slice(0, 100) || null,
       }
     );
 

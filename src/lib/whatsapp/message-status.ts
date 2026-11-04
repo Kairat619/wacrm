@@ -1,6 +1,7 @@
 import type { MessageStatus } from '@/types'
 
 export const MESSAGE_STATUSES: readonly MessageStatus[] = [
+  'queued',
   'sending',
   'sent',
   'delivered',
@@ -18,6 +19,9 @@ export function isMessageStatus(value: unknown): value is MessageStatus {
 
 export function canAdvanceMessageStatus(current: string, incoming: string): boolean {
   if (!isMessageStatus(incoming) || !isMessageStatus(current)) return false
+  // A status webhook describes an attempt that's already out, so it can't apply
+  // to a row waiting for its next attempt. Nor can a webhook put a row back here.
+  if (current === 'queued' || incoming === 'queued') return false
   if (incoming === 'failed') return FAILABLE_FROM.includes(current)
   if (current === 'failed') return false
   return SUCCESS_LADDER.indexOf(incoming) > SUCCESS_LADDER.indexOf(current)

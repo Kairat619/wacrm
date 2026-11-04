@@ -150,6 +150,18 @@ describe('sendMessageToConversation — param validation (pre-DB)', () => {
 });
 
 describe('SendMessageError', () => {
+  it('carries structured Meta failure details when given them', () => {
+    const meta = {
+      httpStatus: 500,
+      code: 131000,
+      subcode: null,
+      fbtraceId: 'trace-1',
+      details: 'Something went wrong',
+    };
+    expect(new SendMessageError('meta_error', 'boom', 502, meta).meta).toEqual(meta);
+    expect(new SendMessageError('bad_request', 'nope', 400).meta).toBeNull();
+  });
+
   it('carries a machine code and an HTTP status', () => {
     const e = new SendMessageError('meta_error', 'boom', 502);
     expect(e.code).toBe('meta_error');

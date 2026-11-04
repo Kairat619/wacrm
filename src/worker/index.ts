@@ -23,6 +23,7 @@ import { getMediaUrl } from '@/lib/whatsapp/meta-api';
 import { runOutboundRetries } from '@/lib/whatsapp/outbound-retry';
 import { pruneWebhookEvents, recoverWebhookEvents } from '@/lib/whatsapp/webhook-events';
 import { startWorker, type RecurringTask } from './run';
+import { mediaSettingsProblem } from './settings';
 
 /**
  * Background worker: its own Railway service, so a large download can't take the
@@ -68,6 +69,11 @@ async function loadAccessToken(accountId: string): Promise<string | null> {
  * runs this check again.
  */
 async function usableMediaStorage(): Promise<MediaStorage | null> {
+  const problem = mediaSettingsProblem();
+  if (problem) {
+    logEvent('error', 'media.storage_check_failed', { reason: problem });
+    return null;
+  }
   const storage = mediaStorageFromEnv();
   if (!storage) {
     logEvent('error', 'media.storage_check_failed', {

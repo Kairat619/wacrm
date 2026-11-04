@@ -43,11 +43,16 @@ export function formatLogLine(
   fields: Record<string, unknown> = {},
   now: Date = new Date()
 ): string {
+  const scrubbed = scrub(fields) as Record<string, unknown>;
+  const detail = scrubbed.error ?? scrubbed.reason;
   return JSON.stringify({
     ts: now.toISOString(),
     level,
+    // Railway treats a JSON line as structured and shows `message` as its text.
+    // Without this field, every line displays as blank.
+    message: typeof detail === 'string' ? `${event}: ${detail}` : event,
     event,
-    ...(scrub(fields) as Record<string, unknown>),
+    ...scrubbed,
   });
 }
 

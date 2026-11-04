@@ -16,9 +16,26 @@ describe('formatLogLine', () => {
     expect(JSON.parse(line)).toEqual({
       ts: '2026-01-01T00:00:00.000Z',
       level: 'warn',
+      message: 'media.retry',
       event: 'media.retry',
       attempt: 2,
     });
+  });
+
+  it('puts the failure in the message, which is what Railway displays', () => {
+    expect(parse({ error: new Error('supabaseUrl is required') }).message).toBe(
+      'test.event: supabaseUrl is required'
+    );
+    expect(parse({ reason: 'settings incomplete' }).message).toBe(
+      'test.event: settings incomplete'
+    );
+  });
+
+  it('scrubs the message too', () => {
+    const line = formatLogLine('error', 'e', {
+      error: 'failed https://cdn.test/file?hash=SIGNED',
+    });
+    expect(line).not.toContain('SIGNED');
   });
 
   it.each([

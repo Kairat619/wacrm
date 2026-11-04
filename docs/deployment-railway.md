@@ -228,8 +228,9 @@ because recovering a webhook runs the same flows and automations as the web serv
 ### Create the worker service
 
 1. In the same project: **New** → **GitHub Repo** → this repository.
-2. Service → **Settings** → **Config-as-code**: set the path to
-   `/railway.worker.json`. It uses the same image and runs `node worker.cjs`.
+2. Service → **Settings** → **Deploy** → **Custom Start Command**: `node worker.cjs`.
+   Under **Teardown**, set the draining time to 30 seconds. Don't use a Railway config
+   file: Railway has deprecated them, and a new service can no longer opt in.
 3. Copy the variables above. Build arguments need the same `NEXT_PUBLIC_*` values
    as the web service.
 4. Deploy, then check its **Deploy Logs** for a `worker.started` line listing the

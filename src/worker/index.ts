@@ -32,7 +32,7 @@ import { startWorker, type RecurringTask } from './run';
 
 const WORKER_ID = `worker-${randomUUID()}`;
 const STAGE_DIR = join(tmpdir(), 'wacrm-media-stage');
-/** Finishes in time for Railway's 30-second drain (see railway.worker.json). */
+/** Finishes inside the 30-second drain set on the Railway service. */
 const SHUTDOWN_GRACE_MS = 25_000;
 const STAGE_MAX_AGE_MS = 24 * 3_600_000;
 /** Started by a sweep and still going; shutdown waits for these. */

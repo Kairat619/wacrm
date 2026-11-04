@@ -83,6 +83,12 @@ interface AuthContextValue {
    */
   profileLoading: boolean;
   signOut: () => Promise<void>;
+  /**
+   * The session ended without the user signing out here: the refresh token was
+   * revoked, or they signed out in another tab. The shell then shows the login
+   * page with an explanation rather than a silent redirect.
+   */
+  sessionExpired: boolean;
   /** Re-fetch the current user's profile row — call after a save from
    *  the settings form so header/sidebar reflect the change without a
    *  full page reload. */
@@ -137,6 +143,13 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 /** Attempts at the profile lookup, including the first. */
 const PROFILE_FETCH_ATTEMPTS = 2;
 const PROFILE_FETCH_RETRY_MS = 1500;
+/**
+ * How long to wait for the first session read before giving up. It can cross
+ * the network when the access token needs refreshing, and giving up with no
+ * user makes the shell redirect to /login, so a low limit bounces a validly
+ * signed-in user on a slow connection.
+ */
+const SESSION_READ_TIMEOUT_MS = 15_000;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -177,6 +190,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // a profile for. This prevents redundant re-fetches and toggling
   // profileLoading back to true on window focus events/token refresh.
   const lastFetchedUserIdRef = useRef<string | null>(null);
+
+  const [sessionExpired, setSessionExpired] = useState(false);
+  // Tells a sign-out the user asked for from one that happened to them.
+  const signingOutRef = useRef(false);
+  const hadUserRef = useRef(false);
 
   // Shared across init, auth-state-change listener, and the exposed
   // refreshProfile() callback. Reads the current session's user id and
@@ -311,11 +329,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const safetyTimer = setTimeout(() => {
       if (mounted) {
-        console.warn("[AuthProvider] getSession() timed out after 3s");
+        console.warn(
+          `[AuthProvider] getSession() timed out after ${SESSION_READ_TIMEOUT_MS}ms`,
+        );
         setLoading(false);
         setProfileLoading(false);
       }
-    }, 3000);
+    }, SESSION_READ_TIMEOUT_MS);
 
     const init = async () => {
       try {
@@ -324,11 +344,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           error,
         } = await supabase.auth.getSession();
 
-        if (error) console.error("[AuthProvider] getSession error:", error.message);
+        if (error) {
+          console.error("[AuthProvider] getSession error:", error.message);
+          if (error.code === "refresh_token_not_found") setSessionExpired(true);
+        }
 
         if (!mounted) return;
         const currentUser = session?.user ?? null;
         setUser(currentUser);
+        if (currentUser) hadUserRef.current = true;
 
         if (currentUser) {
           // Don't block session loading on profile fetch — chrome
@@ -354,10 +378,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
       const currentUser = session?.user ?? null;
       setUser(currentUser);
+      if (event === "SIGNED_OUT" && hadUserRef.current && !signingOutRef.current) {
+        setSessionExpired(true);
+      }
+      hadUserRef.current = !!currentUser;
 
       if (currentUser) {
         if (currentUser.id !== lastFetchedUserIdRef.current) {
@@ -382,6 +410,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     const supabase = createClient();
+    signingOutRef.current = true;
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
@@ -437,6 +466,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         profileLoading,
         signOut,
+        sessionExpired,
         refreshProfile,
         account,
         defaultCurrency: account?.default_currency ?? DEFAULT_CURRENCY,
@@ -469,6 +499,7 @@ export function useAuth(): AuthContextValue {
       signOut: async () => {
         window.location.href = "/login";
       },
+      sessionExpired: false,
       refreshProfile: async () => {},
       account: null,
       defaultCurrency: DEFAULT_CURRENCY,

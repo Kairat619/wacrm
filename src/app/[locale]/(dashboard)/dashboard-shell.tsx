@@ -16,7 +16,7 @@ import { BrowserNotificationsListener } from "@/components/notifications/browser
 // client components can't export Next's metadata object.
 
 function DashboardShellInner({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, sessionExpired } = useAuth();
   const router = useRouter();
   const t = useTranslations("dashboard");
 
@@ -47,9 +47,13 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loading && !user) {
-      router.push("/login");
+      router.push(
+        sessionExpired
+          ? `/login?reason=session_expired&next=${encodeURIComponent(window.location.pathname)}`
+          : "/login",
+      );
     }
-  }, [user, loading, router]);
+  }, [user, loading, sessionExpired, router]);
 
   if (loading) {
     return (

@@ -1,38 +1,76 @@
 import { createServerClient } from '@supabase/ssr';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import createMiddleware from 'next-intl/middleware';
 import { NextResponse, type NextRequest } from 'next/server';
 import { routing } from '@/i18n/routing';
 import { locales, type Locale } from '@/i18n/config';
+import { shareSessionCheck } from '@/lib/auth/session-single-flight';
+import { logEvent } from '@/lib/observability/log';
 
 const handleI18nRouting = createMiddleware(routing);
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
-          supabaseResponse = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
+  // Parallel requests holding the same session share one check, so they can't
+  // each try to rotate the same refresh token. See session-single-flight.ts.
+  const authCookies = request.cookies
+    .getAll()
+    .filter(({ name }) => name.includes('-auth-token'))
+    .map(({ name, value }) => `${name}=${value}`)
+    .join('; ');
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    user,
+    error: authError,
+    cookies: rotatedCookies,
+  } = await shareSessionCheck(authCookies, async () => {
+    const written: {
+      name: string;
+      value: string;
+      options?: Record<string, unknown>;
+    }[] = [];
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            written.push(...cookiesToSet);
+          },
+        },
+      }
+    );
+    const { data, error } = await supabase.auth.getUser();
+    return { user: data.user, error, cookies: written };
+  });
+
+  if (rotatedCookies.length > 0) {
+    rotatedCookies.forEach(({ name, value }) =>
+      request.cookies.set(name, value)
+    );
+    supabaseResponse = NextResponse.next({ request });
+    rotatedCookies.forEach(({ name, value, options }) =>
+      supabaseResponse.cookies.set(name, value, options)
+    );
+  }
+
+  // A network failure or 5xx from Supabase says nothing about the session,
+  // and auth-js keeps the cookies in that case. Treating it as "logged out"
+  // would send a signed-in user to /login over a momentary blip.
+  const authUnavailable = !user && isAuthRetryableFetchError(authError);
+
+  // A session that existed and could not be renewed. Counted through this log
+  // event, because it never reaches the database.
+  const sessionLost = !user && !authUnavailable && !!authCookies && !!authError;
+  if (sessionLost) {
+    logEvent('warn', 'auth.refresh_failed', {
+      code: (authError as { code?: string }).code ?? null,
+    });
+  }
 
   // Copy refreshed cookies onto whatever response we return to prevent
   // session wedge after token rotation (issue #288).
@@ -95,16 +133,35 @@ export async function middleware(request: NextRequest) {
       request.nextUrl.pathname === `/${segment}`
   );
 
-  if (!user && isProtectedPage) {
+  if (!user && !authUnavailable && isProtectedPage) {
     const url = request.nextUrl.clone();
     // Try to preserve locale prefix
     const localeMatch = request.nextUrl.pathname.match(/^\/([a-z]{2})\//);
     const localePrefix = localeMatch ? `/${localeMatch[1]}` : '';
     url.pathname = `${localePrefix}/login`;
+    if (sessionLost) {
+      // Say why, and return them to where they were once they've signed in.
+      url.search = '';
+      url.searchParams.set('reason', 'session_expired');
+      url.searchParams.set('next', request.nextUrl.pathname);
+    }
     return withRefreshedCookies(NextResponse.redirect(url));
   }
 
   // --- API routes that need auth (not webhooks) ---
+  if (
+    authUnavailable &&
+    request.nextUrl.pathname.startsWith('/api/whatsapp/') &&
+    !request.nextUrl.pathname.includes('/webhook')
+  ) {
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: 'Authentication service unavailable' },
+        { status: 503, headers: { 'Retry-After': '5' } }
+      )
+    );
+  }
+
   if (
     !user &&
     request.nextUrl.pathname.startsWith('/api/whatsapp/') &&

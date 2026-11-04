@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/dialog';
 import { useCan } from '@/hooks/use-can';
 import { cn } from '@/lib/utils';
+import { loadDraft, saveDraft } from '@/lib/inbox/draft-store';
 import { toast } from 'sonner';
 import {
   uploadAccountMedia,
@@ -143,7 +144,11 @@ export function MessageComposer({
   const t = useTranslations('inbox.composer');
   const tGate = useTranslations("GatedButton");
 
-  const [text, setText] = useState('');
+  // Starts from any draft kept across a forced sign-in.
+  const [text, setText] = useState(() => loadDraft(conversationId));
+  useEffect(() => {
+    saveDraft(conversationId, text);
+  }, [conversationId, text]);
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);

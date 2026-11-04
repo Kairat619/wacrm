@@ -17,6 +17,22 @@ const ti = getT('Validation.interactive')
 const META_API_VERSION = 'v21.0'
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 
+/**
+ * Time limits for the media read path. Without them a hung Graph or CDN
+ * connection holds the webhook's whole batch open.
+ */
+const MEDIA_LOOKUP_TIMEOUT_MS = 15_000
+const MEDIA_DOWNLOAD_TIMEOUT_MS = 60_000
+/**
+ * Limit for message sends. A send that hits it is ambiguous, because Meta may
+ * have accepted it, so callers must never resend one automatically
+ * (see `outbound-failure.ts`).
+ */
+const SEND_TIMEOUT_MS = 60_000
+
+/** Graph codes that mean "slow down", which Meta often sends without a 429. */
+const RATE_LIMIT_CODES = new Set([4, 17, 32, 613, 80007, 130429, 131048, 131056])
+
 export interface MetaSendResult {
   messageId: string
 }
@@ -65,6 +81,8 @@ export class MetaApiError extends Error {
   readonly httpStatus: number
   /** `error.error_data.details` — WhatsApp endpoints put the useful text here. */
   readonly details: string | null
+  /** Seconds from a usable `Retry-After` header, or null if there wasn't one. */
+  readonly retryAfterSeconds: number | null
 
   constructor(
     message: string,
@@ -75,6 +93,7 @@ export class MetaApiError extends Error {
       fbtraceId?: string | null
       httpStatus: number
       details?: string | null
+      retryAfterSeconds?: number | null
     },
   ) {
     super(message)
@@ -85,6 +104,7 @@ export class MetaApiError extends Error {
     this.fbtraceId = fields.fbtraceId ?? null
     this.httpStatus = fields.httpStatus
     this.details = fields.details ?? null
+    this.retryAfterSeconds = fields.retryAfterSeconds ?? null
   }
 
   /**
@@ -93,8 +113,36 @@ export class MetaApiError extends Error {
    * — permanent, and not a fault of ours to retry or 500 over.
    */
   get isMissingObject(): boolean {
-    return this.code === 100 || this.httpStatus === 404
+    if (this.httpStatus === 404 || this.httpStatus === 410) return true
+    if (this.code === 33) return true
+    // Code 100 alone is any invalid parameter, so it is not proof of absence.
+    return (
+      this.code === 100 &&
+      (this.subcode === 33 ||
+        /does not exist|unsupported (get|post) request/i.test(this.message))
+    )
   }
+
+  /** True when Meta asked us to slow down. */
+  get isRateLimited(): boolean {
+    return this.httpStatus === 429 || RATE_LIMIT_CODES.has(this.code ?? -1)
+  }
+}
+
+/**
+ * Parse a `Retry-After` header. Supports delta-seconds and HTTP dates; returns
+ * null for anything unusable so callers fall back to their own backoff.
+ */
+export function parseRetryAfterSeconds(
+  value: string | null | undefined,
+  now: number = Date.now(),
+): number | null {
+  if (!value) return null
+  const trimmed = value.trim()
+  if (/^\d+$/.test(trimmed)) return Number(trimmed)
+  const at = Date.parse(trimmed)
+  if (Number.isNaN(at)) return null
+  return Math.max(0, Math.ceil((at - now) / 1000))
 }
 
 /**
@@ -118,8 +166,13 @@ async function readMetaError(response: Response, fallback: string): Promise<Meta
     fbtraceId: envelope?.fbtrace_id ?? null,
     httpStatus: response.status,
     details: envelope?.error_data?.details ?? null,
+    // Optional chaining: some tests stub fetch with a bare `{ ok, json }`.
+    retryAfterSeconds: parseRetryAfterSeconds(response.headers?.get('retry-after')),
   })
 }
+
+/** For code outside this module that makes its own Graph or CDN requests. */
+export const metaErrorFromResponse = readMetaError
 
 async function throwMetaError(response: Response, fallback: string): Promise<never> {
   throw await readMetaError(response, fallback)
@@ -420,6 +473,7 @@ export async function sendTextMessage(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
     },
+    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     body: JSON.stringify(body),
   })
   if (!response.ok) {
@@ -485,6 +539,7 @@ export async function sendMediaMessage(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
     },
+    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     body: JSON.stringify(body),
   })
   if (!response.ok) {
@@ -602,6 +657,7 @@ export async function sendTemplateMessage(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
     },
+    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     body: JSON.stringify(body),
   })
   if (!response.ok) {
@@ -1039,6 +1095,7 @@ export async function sendInteractiveButtons(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
     },
+    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     body: JSON.stringify(body),
   })
   if (!response.ok) {
@@ -1170,6 +1227,7 @@ export async function sendInteractiveList(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
     },
+    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     body: JSON.stringify(body),
   })
   if (!response.ok) {
@@ -1225,10 +1283,17 @@ export interface GetMediaUrlArgs {
  */
 export async function getMediaUrl(
   args: GetMediaUrlArgs
-): Promise<{ url: string; mimeType: string; fileSize: number | null }> {
+): Promise<{
+  url: string
+  mimeType: string
+  fileSize: number | null
+  /** Meta's checksum of the file, when it supplies one. */
+  sha256: string | null
+}> {
   const { mediaId, accessToken } = args
   const response = await fetch(`${META_API_BASE}/${mediaId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(MEDIA_LOOKUP_TIMEOUT_MS),
   })
   if (!response.ok) {
     await throwMetaError(response, `Media fetch failed: ${response.status}`)
@@ -1242,6 +1307,7 @@ export async function getMediaUrl(
     url: data.url,
     mimeType: data.mime_type || 'application/octet-stream',
     fileSize: Number.isFinite(size) && size >= 0 ? size : null,
+    sha256: typeof data.sha256 === 'string' && data.sha256 ? data.sha256 : null,
   }
 }
 
@@ -1260,9 +1326,10 @@ export async function downloadMedia(
   const { downloadUrl, accessToken } = args
   const response = await fetch(downloadUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(MEDIA_DOWNLOAD_TIMEOUT_MS),
   })
   if (!response.ok) {
-    throw new Error(`Media download failed: ${response.status}`)
+    await throwMetaError(response, `Media download failed: ${response.status}`)
   }
   const contentType =
     response.headers.get('content-type') || 'application/octet-stream'

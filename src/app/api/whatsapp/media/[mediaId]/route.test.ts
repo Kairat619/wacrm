@@ -6,14 +6,35 @@ const h = vi.hoisted(() => ({
   downloadContentType: 'image/jpeg',
   metaMimeType: 'image/jpeg',
   rateLimitOk: true,
+  downloadError: null as Error | null,
+  metaCalls: 0,
+  job: null as { status: string; storage_key: string | null; content_type: string | null } | null,
+  object: null as { body: ReadableStream<Uint8Array>; contentType: string | null } | null,
+  storageError: null as Error | null,
+}))
+
+vi.mock('@/lib/flows/admin-client', () => ({ supabaseAdmin: () => ({}) }))
+vi.mock('@/lib/media-jobs/queue', () => ({
+  findMediaJob: async () => h.job,
+}))
+vi.mock('@/lib/media-jobs/r2-storage', () => ({
+  mediaStorageFromEnv: () => ({
+    get: async () => {
+      if (h.storageError) throw h.storageError
+      return h.object
+    },
+  }),
 }))
 
 vi.mock('next/server', () => ({
   NextResponse: {
-    json: (body: unknown, init?: { status?: number }) =>
+    json: (
+      body: unknown,
+      init?: { status?: number; headers?: Record<string, string> },
+    ) =>
       new Response(JSON.stringify(body), {
         status: init?.status ?? 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...init?.headers },
       }),
   },
 }))
@@ -50,19 +71,28 @@ vi.mock('@/lib/rate-limit', () => ({
   rateLimitResponse: () => new Response(null, { status: 429 }),
 }))
 
-vi.mock('@/lib/whatsapp/meta-api', () => ({
-  getMediaUrl: async () => ({
-    url: 'https://lookaside.example/media',
-    mimeType: h.metaMimeType,
-    fileSize: 3,
-  }),
-  downloadMedia: async () => ({
-    buffer: Buffer.from('abc'),
-    contentType: h.downloadContentType,
-  }),
+vi.mock('@/lib/whatsapp/meta-api', async (importOriginal) => ({
+  MetaApiError: (await importOriginal<typeof import('@/lib/whatsapp/meta-api')>())
+    .MetaApiError,
+  getMediaUrl: async () => {
+    h.metaCalls++
+    return {
+      url: 'https://lookaside.example/media',
+      mimeType: h.metaMimeType,
+      fileSize: 3,
+    }
+  },
+  downloadMedia: async () => {
+    if (h.downloadError) throw h.downloadError
+    return {
+      buffer: Buffer.from('abc'),
+      contentType: h.downloadContentType,
+    }
+  },
 }))
 
 import { GET } from './route'
+import { MetaApiError } from '@/lib/whatsapp/meta-api'
 
 function call(mediaId = '1234567890') {
   return GET(new Request(`http://localhost/api/whatsapp/media/${mediaId}`), {
@@ -76,6 +106,12 @@ beforeEach(() => {
   h.downloadContentType = 'image/jpeg'
   h.metaMimeType = 'image/jpeg'
   h.rateLimitOk = true
+  h.downloadError = null
+  h.metaCalls = 0
+  h.job = null
+  h.object = null
+  h.storageError = null
+  delete process.env.MEDIA_JOBS_ENABLED
 })
 
 describe('GET /api/whatsapp/media/[mediaId]', () => {
@@ -129,5 +165,85 @@ describe('GET /api/whatsapp/media/[mediaId]', () => {
     h.accountId = null
     const res = await call()
     expect(res.status).toBe(403)
+  })
+
+  it('passes Meta throttling through as 429 with Retry-After', async () => {
+    h.downloadError = new MetaApiError('Media download failed: 429', {
+      httpStatus: 429,
+      retryAfterSeconds: 42,
+    })
+    const res = await call()
+    expect(res.status).toBe(429)
+    expect(res.headers.get('retry-after')).toBe('42')
+  })
+
+  it('reports media Meta no longer holds as 410', async () => {
+    h.downloadError = new MetaApiError('gone', { httpStatus: 404 })
+    const res = await call()
+    expect(res.status).toBe(410)
+  })
+
+  it('does not report an unrelated Meta parameter error as expired', async () => {
+    h.downloadError = new MetaApiError('(#100) Invalid parameter', {
+      code: 100,
+      httpStatus: 400,
+    })
+    const res = await call()
+    expect(res.status).toBe(500)
+  })
+
+  describe('with media jobs on', () => {
+    const bytes = () => new Response('r2-bytes').body as ReadableStream<Uint8Array>
+
+    beforeEach(() => {
+      process.env.MEDIA_JOBS_ENABLED = 'true'
+    })
+
+    it('serves a stored file from R2 without calling Meta', async () => {
+      h.job = { status: 'stored', storage_key: 'k', content_type: 'image/png' }
+      h.object = { body: bytes(), contentType: 'image/png' }
+
+      const res = await call()
+
+      expect(res.status).toBe(200)
+      expect(await res.text()).toBe('r2-bytes')
+      expect(res.headers.get('content-type')).toBe('image/png')
+      expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+      expect(h.metaCalls).toBe(0)
+    })
+
+    it('still requires a signed-in caller before serving from R2', async () => {
+      h.user = null
+      h.job = { status: 'stored', storage_key: 'k', content_type: 'image/png' }
+      h.object = { body: bytes(), contentType: 'image/png' }
+
+      expect((await call()).status).toBe(401)
+    })
+
+    it('answers 410 for unavailable media without calling Meta', async () => {
+      h.job = { status: 'unavailable', storage_key: null, content_type: null }
+
+      expect((await call()).status).toBe(410)
+      expect(h.metaCalls).toBe(0)
+    })
+
+    it('falls back to Meta while the job is still running', async () => {
+      h.job = { status: 'downloading', storage_key: null, content_type: null }
+
+      const res = await call()
+
+      expect(await res.text()).toBe('abc')
+      expect(h.metaCalls).toBe(1)
+    })
+
+    it('falls back to Meta when R2 cannot be read', async () => {
+      h.job = { status: 'stored', storage_key: 'k', content_type: 'image/png' }
+      h.storageError = new Error('R2 read failed: 500')
+      vi.spyOn(console, 'warn').mockImplementationOnce(() => {})
+
+      const res = await call()
+
+      expect(await res.text()).toBe('abc')
+    })
   })
 })

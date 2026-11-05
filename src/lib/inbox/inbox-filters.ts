@@ -38,6 +38,19 @@ function byOldestInbound(a: Conversation, b: Conversation): number {
   return (a.last_inbound_at ?? "").localeCompare(b.last_inbound_at ?? "");
 }
 
+// Parsed rather than compared as strings: realtime payloads and client-side
+// writes format the same instant differently ("+00:00" vs "Z").
+function lastMessageTime(c: Conversation): number {
+  return c.last_message_at ? Date.parse(c.last_message_at) || 0 : 0;
+}
+
+// Unread chats first so a new client message can't sit below other activity,
+// then newest first. Conversations with no messages go last.
+function byInboxPriority(a: Conversation, b: Conversation): number {
+  const unreadOrder = Number(b.unread_count > 0) - Number(a.unread_count > 0);
+  return unreadOrder || lastMessageTime(b) - lastMessageTime(a);
+}
+
 export function applyInboxFilter(
   conversations: Conversation[],
   filter: InboxFilter,
@@ -45,16 +58,20 @@ export function applyInboxFilter(
 ): Conversation[] {
   switch (filter) {
     case "all":
-      return conversations;
+      return [...conversations].sort(byInboxPriority);
     case "unread":
-      return conversations.filter((c) => c.unread_count > 0);
+      return conversations.filter((c) => c.unread_count > 0).sort(byInboxPriority);
     case "waiting":
       return conversations.filter(isAwaitingReply).sort(byOldestInbound);
     case "expiring":
       return conversations.filter((c) => isWindowClosing(c, now)).sort(byOldestInbound);
     case "unassigned":
-      return conversations.filter((c) => c.status === "open" && !c.assigned_agent_id);
+      return conversations
+        .filter((c) => c.status === "open" && !c.assigned_agent_id)
+        .sort(byInboxPriority);
     default:
-      return conversations.filter((c) => c.status === (filter as ConversationStatus));
+      return conversations
+        .filter((c) => c.status === (filter as ConversationStatus))
+        .sort(byInboxPriority);
   }
 }

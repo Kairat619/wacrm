@@ -23,6 +23,7 @@ import { getMediaUrl } from '@/lib/whatsapp/meta-api';
 import { runOutboundRetries } from '@/lib/whatsapp/outbound-retry';
 import { pruneWebhookEvents, recoverWebhookEvents } from '@/lib/whatsapp/webhook-events';
 import { startWorker, type RecurringTask } from './run';
+import { mediaSettingsProblem } from './settings';
 
 /**
  * Background worker: its own Railway service, so a large download can't take the
@@ -32,7 +33,7 @@ import { startWorker, type RecurringTask } from './run';
 
 const WORKER_ID = `worker-${randomUUID()}`;
 const STAGE_DIR = join(tmpdir(), 'wacrm-media-stage');
-/** Finishes in time for Railway's 30-second drain (see railway.worker.json). */
+/** Finishes inside the 30-second drain set on the Railway service. */
 const SHUTDOWN_GRACE_MS = 25_000;
 const STAGE_MAX_AGE_MS = 24 * 3_600_000;
 /** Started by a sweep and still going; shutdown waits for these. */
@@ -68,6 +69,11 @@ async function loadAccessToken(accountId: string): Promise<string | null> {
  * runs this check again.
  */
 async function usableMediaStorage(): Promise<MediaStorage | null> {
+  const problem = mediaSettingsProblem();
+  if (problem) {
+    logEvent('error', 'media.storage_check_failed', { reason: problem });
+    return null;
+  }
   const storage = mediaStorageFromEnv();
   if (!storage) {
     logEvent('error', 'media.storage_check_failed', {

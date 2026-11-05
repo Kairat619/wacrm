@@ -247,10 +247,15 @@ function InboxPageInner() {
                     ...c,
                     last_message_text: newMsg.content_text ?? "",
                     last_message_at: newMsg.created_at,
+                    // Only customer messages count as unread: unread chats
+                    // are pinned to the top of the list, so an agent or bot
+                    // send must not move a chat up there.
                     unread_count:
                       activeConversation?.id === newMsg.conversation_id
                         ? 0
-                        : c.unread_count + 1,
+                        : newMsg.sender_type === "customer"
+                          ? c.unread_count + 1
+                          : c.unread_count,
                   }
                 : c,
             ),

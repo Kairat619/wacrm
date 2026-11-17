@@ -894,7 +894,9 @@
       "dealCreated": "Сделка создана",
       "failedToUpdateStatus": "Не удалось обновить статус сделки",
       "failedToDeleteDeal": "Не удалось удалить сделку",
-      "dealDeleted": "Сделка удалена"
+      "dealDeleted": "Сделка удалена",
+      "pipelineLabel": "Канал",
+      "noPipelines": "Каналов пока нет. Создайте канал на странице «Каналы»."
     },
     "page": {
       "selectPipeline": "Select Pipeline",
@@ -1569,7 +1571,8 @@
       "deals": "Deals",
       "noTags": "No tags",
       "noDeals": "No deals",
-      "addNotePlaceholder": "Add a note..."
+      "addNotePlaceholder": "Add a note...",
+      "addDeal": "Новая сделка"
     },
     "templatePicker": {
       "title": "Выберите шаблон",

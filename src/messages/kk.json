@@ -854,7 +854,11 @@
     "filters": {
       "searchPlaceholder": "Мәмілелерді атауы, контакт немесе телефон бойынша іздеу",
       "clearSearch": "Іздеуді тазалау",
-      "matchCount": "{total} ішінен {count} көрсетілген"
+      "matchCount": "{total} ішінен {count} көрсетілген",
+      "createdLabel": "Құрылған",
+      "createdFrom": "Құрылған күннен",
+      "createdTo": "Құрылған күнге дейін",
+      "clearDates": "Күндерді тазалау"
     },
     "dealForm": {
       "newDeal": "Жаңа мәміле",

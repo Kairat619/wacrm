@@ -119,12 +119,24 @@ export default function PipelinesPage() {
 
   const loadDeals = useCallback(
     async (pipelineId: string) => {
-      const { data } = await supabase
-        .from("deals")
-        .select("*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*)")
-        .eq("pipeline_id", pipelineId)
-        .order("created_at", { ascending: false });
-      return (data ?? []) as Deal[];
+      // PostgREST caps a single response (Supabase default: 1000 rows),
+      // so a large pipeline would silently lose deals — and the board's
+      // column / date-range counts would be wrong. Page until a short page.
+      const PAGE = 1000;
+      const all: Deal[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from("deals")
+          .select("*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*)")
+          .eq("pipeline_id", pipelineId)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error || !data) break;
+        all.push(...(data as Deal[]));
+        if (data.length < PAGE) break;
+      }
+      return all;
     },
     [supabase],
   );

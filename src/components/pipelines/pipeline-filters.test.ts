@@ -65,7 +65,46 @@ describe('filterDeals', () => {
 describe('hasActiveFilters', () => {
   it('ignores a whitespace-only query', () => {
     expect(hasActiveFilters(EMPTY_DEAL_FILTERS)).toBe(false);
-    expect(hasActiveFilters({ search: '  ' })).toBe(false);
-    expect(hasActiveFilters({ search: 'bakery' })).toBe(true);
+    expect(hasActiveFilters({ ...EMPTY_DEAL_FILTERS, search: '  ' })).toBe(false);
+    expect(hasActiveFilters({ ...EMPTY_DEAL_FILTERS, search: 'bakery' })).toBe(true);
+  });
+
+  it('counts a date bound as active', () => {
+    expect(hasActiveFilters({ ...EMPTY_DEAL_FILTERS, createdFrom: '2026-11-01' })).toBe(true);
+    expect(hasActiveFilters({ ...EMPTY_DEAL_FILTERS, createdTo: '2026-11-15' })).toBe(true);
+  });
+});
+
+describe('filterDeals by creation date', () => {
+  // Noon UTC so the local calendar day is the same in any zone from
+  // UTC-11 to UTC+11 — keeps the test independent of the runner's TZ.
+  const DATED: Deal[] = [
+    deal({ id: 'oct31', title: 'a', created_at: '2026-10-31T12:00:00Z' }),
+    deal({ id: 'nov01', title: 'b', created_at: '2026-11-01T12:00:00Z' }),
+    deal({ id: 'nov15', title: 'c', created_at: '2026-11-15T12:00:00Z' }),
+    deal({ id: 'nov16', title: 'd', created_at: '2026-11-16T12:00:00Z' }),
+  ];
+  const range = (createdFrom: string, createdTo: string) =>
+    ids(filterDeals(DATED, { ...EMPTY_DEAL_FILTERS, createdFrom, createdTo }));
+
+  it('includes both end days', () => {
+    expect(range('2026-11-01', '2026-11-15')).toEqual(['nov01', 'nov15']);
+  });
+
+  it('treats an empty bound as open-ended', () => {
+    expect(range('2026-11-15', '')).toEqual(['nov15', 'nov16']);
+    expect(range('', '2026-11-01')).toEqual(['oct31', 'nov01']);
+  });
+
+  it('combines with search', () => {
+    expect(
+      ids(
+        filterDeals(DATED, {
+          search: 'b',
+          createdFrom: '2026-11-01',
+          createdTo: '2026-11-15',
+        }),
+      ),
+    ).toEqual(['nov01']);
   });
 });

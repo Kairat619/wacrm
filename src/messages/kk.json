@@ -894,7 +894,9 @@
       "dealCreated": "Мәміле жасалды",
       "failedToUpdateStatus": "Мәртебені жаңарту сәтсіз аяқталды",
       "failedToDeleteDeal": "Мәмілені жою сәтсіз аяқталды",
-      "dealDeleted": "Мәміле жойылды"
+      "dealDeleted": "Мәміле жойылды",
+      "pipelineLabel": "Канал",
+      "noPipelines": "Әзірге каналдар жоқ. «Каналдар» бетінде жасаңыз."
     },
     "page": {
       "selectPipeline": "Select Pipeline",
@@ -1569,7 +1571,8 @@
       "deals": "Deals",
       "noTags": "No tags",
       "noDeals": "No deals",
-      "addNotePlaceholder": "Add a note..."
+      "addNotePlaceholder": "Add a note...",
+      "addDeal": "Жаңа мәміле"
     },
     "templatePicker": {
       "title": "Үлгіні таңдаңыз",

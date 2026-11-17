@@ -12,6 +12,7 @@ import type {
   Conversation,
   Deal,
   DealStatus,
+  Pipeline,
   PipelineStage,
   Profile,
 } from "@/types";
@@ -39,9 +40,23 @@ interface DealFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   deal?: Deal | null;
-  pipelineId: string;
-  stages: PipelineStage[];
+  /**
+   * Pipeline the deal belongs to. When omitted (e.g. opened from the
+   * Inbox) the form loads the account's pipelines and stages itself and
+   * shows a pipeline picker.
+   */
+  pipelineId?: string;
+  /** Stages of `pipelineId`. Omit together with `pipelineId`. */
+  stages?: PipelineStage[];
   defaultStageId?: string;
+  /**
+   * Pin the deal to this contact: the contact picker is replaced with a
+   * read-only label. Used from the Inbox, where the contact is the one
+   * the agent is chatting with.
+   */
+  lockedContact?: Contact | null;
+  /** Conversation a newly created deal is linked to (deals.conversation_id). */
+  conversationId?: string | null;
   onSaved: () => void;
 }
 
@@ -52,6 +67,8 @@ export function DealForm({
   pipelineId,
   stages,
   defaultStageId,
+  lockedContact,
+  conversationId,
   onSaved,
 }: DealFormProps) {
   const t = useTranslations("pipelines.dealForm");
@@ -73,6 +90,14 @@ export function DealForm({
   const [linkedConversation, setLinkedConversation] =
     useState<Conversation | null>(null);
 
+  // Standalone mode (no pipelineId prop): pipelines/stages are loaded here.
+  const standalone = pipelineId === undefined;
+  const [pipelineOptions, setPipelineOptions] = useState<Pipeline[]>([]);
+  const [selectedPipelineId, setSelectedPipelineId] = useState("");
+  const [ownStages, setOwnStages] = useState<PipelineStage[]>([]);
+  const effectivePipelineId = pipelineId ?? selectedPipelineId;
+  const effectiveStages = stages ?? ownStages;
+
   const [saving, setSaving] = useState(false);
   const [statusAction, setStatusAction] = useState<DealStatus | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -91,7 +116,7 @@ export function DealForm({
       setCurrency(deal.currency || defaultCurrency);
       // contact_id is nullable when the contact has been deleted
       // (migration 004: ON DELETE SET NULL). "" means "no selection".
-      setContactId(deal.contact_id ?? "");
+      setContactId(deal.contact_id ?? lockedContact?.id ?? "");
       setStageId(deal.stage_id);
       setAssignedTo(deal.assigned_to ?? "");
       setExpectedCloseDate(deal.expected_close_date ?? "");
@@ -100,22 +125,81 @@ export function DealForm({
       setTitle("");
       setValue("");
       setCurrency(defaultCurrency);
-      setContactId("");
-      setStageId(defaultStageId || stages[0]?.id || "");
+      setContactId(lockedContact?.id ?? "");
+      setStageId(defaultStageId || stages?.[0]?.id || "");
       setAssignedTo("");
       setExpectedCloseDate("");
       setNotes("");
     }
-  }, [open, deal, defaultStageId, stages, defaultCurrency]);
+  }, [open, deal, defaultStageId, stages, defaultCurrency, lockedContact]);
+
+  // Standalone mode: load the account's pipelines when the sheet opens
+  // and preselect the deal's pipeline (edit) or the first one (create).
+  // Cleared on close so the next open re-triggers the stage load below.
+  useEffect(() => {
+    if (!standalone) return;
+    if (!open) {
+      setSelectedPipelineId("");
+      setOwnStages([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("pipelines")
+        .select("*")
+        .order("created_at");
+      if (cancelled) return;
+      const list = (data ?? []) as Pipeline[];
+      setPipelineOptions(list);
+      const initial =
+        deal && list.some((p) => p.id === deal.pipeline_id)
+          ? deal.pipeline_id
+          : list[0]?.id ?? "";
+      setSelectedPipelineId(initial);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [standalone, open, deal, supabase]);
+
+  // Standalone mode: load the selected pipeline's stages. Keep the
+  // current stage if it belongs to this pipeline (editing), otherwise
+  // fall back to the first stage (new deal / pipeline switched).
+  useEffect(() => {
+    if (!standalone || !open || !selectedPipelineId) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("pipeline_stages")
+        .select("*")
+        .eq("pipeline_id", selectedPipelineId)
+        .order("position");
+      if (cancelled) return;
+      const list = (data ?? []) as PipelineStage[];
+      setOwnStages(list);
+      setStageId((prev) =>
+        list.some((s) => s.id === prev) ? prev : list[0]?.id ?? "",
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [standalone, open, selectedPipelineId, supabase]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Load supporting data once the sheet is open
+  const contactLocked = !!lockedContact;
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     (async () => {
       const [c, p] = await Promise.all([
-        supabase.from("contacts").select("*").order("name"),
+        // The full contact list only feeds the picker, which is hidden
+        // when the contact is locked.
+        contactLocked
+          ? Promise.resolve({ data: [] as Contact[] })
+          : supabase.from("contacts").select("*").order("name"),
         supabase.from("profiles").select("*").order("full_name"),
       ]);
       if (cancelled) return;
@@ -125,7 +209,7 @@ export function DealForm({
     return () => {
       cancelled = true;
     };
-  }, [open, supabase]);
+  }, [open, supabase, contactLocked]);
 
   // Fetch linked conversation for the selected contact (newest open one).
   // Clearing on no-selection is sync with prop state; the populated
@@ -154,7 +238,7 @@ export function DealForm({
   }, [open, contactId, supabase]);
 
   async function handleSave() {
-    if (!title.trim() || !contactId || !stageId) {
+    if (!title.trim() || !contactId || !stageId || !effectivePipelineId) {
       toast.error(t("titleContactStageRequired"));
       return;
     }
@@ -165,7 +249,7 @@ export function DealForm({
       value: parseFloat(value) || 0,
       currency,
       contact_id: contactId,
-      pipeline_id: pipelineId,
+      pipeline_id: effectivePipelineId,
       stage_id: stageId,
       assigned_to: assignedTo || null,
       notes: notes.trim() || null,
@@ -199,7 +283,13 @@ export function DealForm({
       }
       const { error } = await supabase
         .from("deals")
-        .insert({ ...payload, user_id: user.id, account_id: accountId, status: "open" });
+        .insert({
+          ...payload,
+          user_id: user.id,
+          account_id: accountId,
+          status: "open",
+          ...(conversationId ? { conversation_id: conversationId } : {}),
+        });
       if (error) {
         toast.error(t("failedToCreateDeal"));
         setSaving(false);
@@ -273,20 +363,29 @@ export function DealForm({
 
             <div className="grid gap-2">
               <Label className="text-muted-foreground">{t("contactLabel")}</Label>
-              <select
-                value={contactId}
-                onChange={(e) => setContactId(e.target.value)}
-                className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                <option value="">{t("selectContact")}</option>
-                {contacts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name || c.phone}
-                  </option>
-                ))}
-              </select>
+              {lockedContact ? (
+                <div className="flex h-9 w-full items-center rounded-lg border border-border bg-muted/50 px-2.5 text-sm text-foreground">
+                  <span className="truncate">
+                    {lockedContact.name || lockedContact.phone}
+                  </span>
+                </div>
+              ) : (
+                <select
+                  value={contactId}
+                  onChange={(e) => setContactId(e.target.value)}
+                  className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                >
+                  <option value="">{t("selectContact")}</option>
+                  {contacts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name || c.phone}
+                    </option>
+                  ))}
+                </select>
+              )}
 
-              {linkedConversation && (
+              {/* Already in the conversation when opened from the Inbox. */}
+              {linkedConversation && !lockedContact && (
                 <Link
                   href={conversationHref(linkedConversation.id)}
                   className="mt-1 inline-flex items-center gap-1.5 self-start rounded-md bg-primary/10 px-2 py-1 text-xs text-primary hover:bg-primary/20"
@@ -337,6 +436,27 @@ export function DealForm({
               />
             </div>
 
+            {standalone && (
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">{t("pipelineLabel")}</Label>
+                {pipelineOptions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t("noPipelines")}</p>
+                ) : (
+                  <select
+                    value={selectedPipelineId}
+                    onChange={(e) => setSelectedPipelineId(e.target.value)}
+                    className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary"
+                  >
+                    {pipelineOptions.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+
             <div className="grid gap-2">
               <Label className="text-muted-foreground">{t("stageLabel")}</Label>
               <select
@@ -344,7 +464,7 @@ export function DealForm({
                 onChange={(e) => setStageId(e.target.value)}
                 className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary"
               >
-                {stages.map((s) => (
+                {effectiveStages.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
@@ -441,7 +561,7 @@ export function DealForm({
               </Button>
               <Button
                 onClick={handleSave}
-                disabled={saving || !title.trim() || !contactId || !stageId}
+                disabled={saving || !title.trim() || !contactId || !stageId || !effectivePipelineId}
                 className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {saving ? t("saving") : deal ? t("saveChanges") : t("createDeal")}

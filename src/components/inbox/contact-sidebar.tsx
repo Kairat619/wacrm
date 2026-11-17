@@ -21,22 +21,28 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
+import { DealForm } from "@/components/pipelines/deal-form";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  /** Open conversation; new deals created here are linked to it. */
+  conversationId?: string | null;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, conversationId }: ContactSidebarProps) {
   const tSidebar = useTranslations("inbox.sidebar");
   const tThread = useTranslations("inbox.messageThread");
 
-  const { accountId } = useAuth();
+  const { accountId, canSendMessages } = useAuth();
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  // Deal sheet: null deal = create a new one for this contact.
+  const [dealFormOpen, setDealFormOpen] = useState(false);
+  const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -220,16 +226,36 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           <div>
             <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <DollarSign className="h-3 w-3" />
-              {tSidebar("deals")}
+              <span className="flex-1">{tSidebar("deals")}</span>
+              {canSendMessages && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingDeal(null);
+                    setDealFormOpen(true);
+                  }}
+                  title={tSidebar("addDeal")}
+                  aria-label={tSidebar("addDeal")}
+                  className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
             <div className="mt-2 space-y-2">
               {deals.length === 0 ? (
                 <p className="px-1 text-xs text-muted-foreground">{tSidebar("noDeals")}</p>
               ) : (
                 deals.map((deal) => (
-                  <div
+                  <button
+                    type="button"
                     key={deal.id}
-                    className="rounded-lg bg-muted px-3 py-2"
+                    disabled={!canSendMessages}
+                    onClick={() => {
+                      setEditingDeal(deal);
+                      setDealFormOpen(true);
+                    }}
+                    className="block w-full rounded-lg bg-muted px-3 py-2 text-left transition-colors enabled:hover:bg-muted/70"
                   >
                     <p className="text-sm font-medium text-foreground">
                       {deal.title}
@@ -251,7 +277,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                         </span>
                       )}
                     </div>
-                  </div>
+                  </button>
                 ))
               )}
             </div>
@@ -304,6 +330,15 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           </div>
         </div>
       </ScrollArea>
+
+      <DealForm
+        open={dealFormOpen}
+        onOpenChange={setDealFormOpen}
+        deal={editingDeal}
+        lockedContact={contact}
+        conversationId={conversationId}
+        onSaved={fetchContactData}
+      />
     </div>
   );
 }

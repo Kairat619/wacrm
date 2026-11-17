@@ -854,7 +854,11 @@
     "filters": {
       "searchPlaceholder": "Search deals by title, contact or phone",
       "clearSearch": "Clear search",
-      "matchCount": "Showing {count} of {total}"
+      "matchCount": "Showing {count} of {total}",
+      "createdLabel": "Created",
+      "createdFrom": "Created from",
+      "createdTo": "Created to",
+      "clearDates": "Clear dates"
     },
     "dealForm": {
       "newDeal": "New Deal",

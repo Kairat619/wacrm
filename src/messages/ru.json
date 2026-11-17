@@ -854,7 +854,11 @@
     "filters": {
       "searchPlaceholder": "Поиск сделок по названию, контакту или телефону",
       "clearSearch": "Очистить поиск",
-      "matchCount": "Показано {count} из {total}"
+      "matchCount": "Показано {count} из {total}",
+      "createdLabel": "Создано",
+      "createdFrom": "Создано с",
+      "createdTo": "Создано по",
+      "clearDates": "Сбросить даты"
     },
     "dealForm": {
       "newDeal": "Новая сделка",

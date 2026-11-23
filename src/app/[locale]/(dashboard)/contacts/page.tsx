@@ -40,6 +40,7 @@ import {
   Search,
   Plus,
   Upload,
+  Download,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -55,6 +56,11 @@ import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
+import {
+  buildContactsCsv,
+  contactsCsvFilename,
+} from '@/lib/contacts/contact-csv-export';
+import { fetchContactsForExport } from '@/lib/contacts/fetch-contacts-for-export';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 
@@ -90,6 +96,7 @@ export default function ContactsPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Bulk selection (page-scoped — only the loaded rows are selectable)
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -315,6 +322,34 @@ export default function ContactsPage() {
     setBulkDeleteOpen(false);
   }
 
+  // Exports everything matching the current search + tag filters, not
+  // just the loaded page.
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const { contacts: rows, customFields } = await fetchContactsForExport(
+        supabase,
+        { search, tagIds: selectedTagIds }
+      );
+      const blob = new Blob([buildContactsCsv(rows, customFields)], {
+        type: 'text/csv;charset=utf-8;',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = contactsCsvFilename(new Date());
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(t('toastExported', { count: rows.length }));
+    } catch (err) {
+      console.error('[contacts] export failed:', err);
+      toast.error(t('toastExportFailed'));
+    }
+    setExporting(false);
+  }
+
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const hasNext = page < totalPages - 1;
   const hasPrev = page > 0;
@@ -350,7 +385,7 @@ export default function ContactsPage() {
             {t('description')} {totalCount > 0 && `${totalCount} total contacts.`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canEditSettings && (
             <Button
               variant="outline"
@@ -371,6 +406,22 @@ export default function ContactsPage() {
             <Upload className="size-4" />
             {t('importBtn')}
           </GatedButton>
+          {/* Admin-only: the file holds the whole customer list. */}
+          {canEditSettings && (
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              disabled={exporting || loading || totalCount === 0}
+              className="border-border text-muted-foreground hover:bg-muted"
+            >
+              {exporting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+              {t('export')}
+            </Button>
+          )}
           <GatedButton
             canAct={canEdit}
             gateReason={tGate('reasons.addOrImportContacts')}

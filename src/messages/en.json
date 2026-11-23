@@ -1395,6 +1395,8 @@
     "deleteBulkTitle": "Delete Contacts",
     "deleteBulkDesc": "Are you sure you want to delete {count} selected contacts? This action cannot be undone.",
     "toastFailedLoad": "Failed to load contacts",
+    "toastExported": "{count, plural, one {# contact exported} other {# contacts exported}}",
+    "toastExportFailed": "Failed to export contacts",
     "toastFailedDelete": "Failed to delete contact",
     "toastDeleted": "Contact deleted",
     "toastBulkFailedDelete": "Failed to delete contacts",

@@ -228,18 +228,19 @@ export function ContactSidebar({ contact, conversationId }: ContactSidebarProps)
               <DollarSign className="h-3 w-3" />
               <span className="flex-1">{tSidebar("deals")}</span>
               {canSendMessages && (
-                <button
+                <Button
                   type="button"
+                  size="icon-sm"
                   onClick={() => {
                     setEditingDeal(null);
                     setDealFormOpen(true);
                   }}
                   title={tSidebar("addDeal")}
                   aria-label={tSidebar("addDeal")}
-                  className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="hover:bg-primary/90"
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
+                  <Plus className="size-4.5" strokeWidth={2.5} />
+                </Button>
               )}
             </div>
             <div className="mt-2 space-y-2">

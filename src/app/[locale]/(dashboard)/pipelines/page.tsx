@@ -521,13 +521,15 @@ export default function PipelinesPage() {
         />
       )}
 
-      {/* Deal Form (Sheet) */}
+      {/* Deal Form (Sheet). When editing, pipeline and stages are left for
+          the form to load so it offers the pipeline picker — that's how a
+          deal is handed over from one pipeline to another. */}
       <DealForm
         open={dealFormOpen}
         onOpenChange={setDealFormOpen}
         deal={editingDeal}
-        pipelineId={selectedPipelineId}
-        stages={stages}
+        pipelineId={editingDeal ? undefined : selectedPipelineId}
+        stages={editingDeal ? undefined : stages}
         defaultStageId={defaultStageId}
         onSaved={refreshDeals}
       />

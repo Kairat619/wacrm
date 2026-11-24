@@ -1673,6 +1673,8 @@
       "you": "You",
       "customer": "Customer",
       "noTeammatesAvailable": "No teammates available",
+      "jumpToLatest": "Соңғы хабарламаларға өту",
+      "newMessagesBelow": "Жаңа хабарламалар: {count}",
       "loadOlderFailed": "Ертерек хабарламаларды жүктеу мүмкін болмады.",
       "sendFailed": "Жіберу сәтсіз: {reason}",
       "networkError": "желі қатесі",

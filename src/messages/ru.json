@@ -1673,6 +1673,8 @@
       "you": "You",
       "customer": "Customer",
       "noTeammatesAvailable": "No teammates available",
+      "jumpToLatest": "К последним сообщениям",
+      "newMessagesBelow": "Новых сообщений: {count}",
       "loadOlderFailed": "Не удалось загрузить более ранние сообщения.",
       "sendFailed": "Не удалось отправить: {reason}",
       "networkError": "ошибка сети",

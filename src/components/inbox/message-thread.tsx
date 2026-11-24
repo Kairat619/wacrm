@@ -20,6 +20,7 @@ import type {
 } from "@/types";
 import {
   MessageSquare,
+  ArrowDown,
   ChevronDown,
   UserPlus,
   Check,
@@ -73,6 +74,11 @@ import {
   isTempMessage,
   newTempMessageId,
 } from "@/lib/inbox/optimistic-messages";
+import {
+  countCustomerMessagesAfter,
+  lastCustomerMessageId,
+  shouldFollowLatest,
+} from "@/lib/inbox/thread-scroll";
 
 const MESSAGE_PAGE_SIZE = 200;
 
@@ -201,6 +207,17 @@ export function MessageThread({
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const threadContentRef = useRef<HTMLDivElement>(null);
+  // Whether the view follows new messages. Off while the agent is reading
+  // further up, so nothing that refreshes the thread can move them.
+  const followLatestRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
+  // Set while the agent is scrolled up: drives the jump-to-latest button and
+  // its count of customer messages that arrived in the meantime.
+  const [scrolledUp, setScrolledUp] = useState<{
+    conversationId: string;
+    lastCustomerId: string | null;
+  } | null>(null);
   const scrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const [olderPages, setOlderPages] = useState<{
     conversationId: string;
@@ -576,7 +593,14 @@ export function MessageThread({
       });
   }, [conversationId, hasUnread]);
 
-  // Auto-scroll to bottom on new messages
+  // A newly opened thread always starts at its latest message. Must stay
+  // above the messages effect so that one sees the reset.
+  useLayoutEffect(() => {
+    followLatestRef.current = true;
+  }, [conversationId]);
+
+  // `messages` changes on every new message, but also on delivery/read
+  // ticks and resyncs, so only scroll when the agent is at the bottom.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -586,8 +610,71 @@ export function MessageThread({
       el.scrollTop = el.scrollHeight - anchor.scrollHeight + anchor.scrollTop;
       return;
     }
-    el.scrollTop = el.scrollHeight;
+    if (followLatestRef.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
+
+  // Stay at the bottom when images finish loading or the composer grows.
+  const threadVisible = !!conversation && !!contact;
+  useEffect(() => {
+    const el = scrollRef.current;
+    const content = threadContentRef.current;
+    if (!threadVisible || !el || !content) return;
+    const observer = new ResizeObserver(() => {
+      if (followLatestRef.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(el);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [threadVisible]);
+
+  const handleThreadScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || !conversationId) return;
+    const wasFollowing = followLatestRef.current;
+    const following = shouldFollowLatest(wasFollowing, {
+      scrollTop: el.scrollTop,
+      previousScrollTop: lastScrollTopRef.current,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    });
+    lastScrollTopRef.current = el.scrollTop;
+    followLatestRef.current = following;
+    if (following) {
+      setScrolledUp(null);
+    } else if (wasFollowing) {
+      setScrolledUp({
+        conversationId,
+        lastCustomerId: lastCustomerMessageId(messages),
+      });
+    }
+  }, [conversationId, messages]);
+
+  const isScrolledUp =
+    messages.length > 0 &&
+    !!scrolledUp &&
+    scrolledUp.conversationId === conversationId;
+  const newBelowCount = isScrolledUp
+    ? countCustomerMessagesAfter(messages, scrolledUp.lastCustomerId)
+    : 0;
+
+  const jumpToLatest = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    followLatestRef.current = true;
+    setScrolledUp(null);
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, []);
+
+  // Sending is the one thing that brings a scrolled-up agent back down:
+  // they need to see what they just sent.
+  const appendOwnMessage = useCallback(
+    (message: Message) => {
+      followLatestRef.current = true;
+      setScrolledUp(null);
+      onNewMessage(message);
+    },
+    [onNewMessage],
+  );
 
   const handleSend = useCallback(
     async (text: string, replyToId?: string) => {
@@ -606,7 +693,7 @@ export function MessageThread({
         created_at: new Date().toISOString(),
         reply_to_message_id: replyToId,
       };
-      onNewMessage(optimisticMsg);
+      appendOwnMessage(optimisticMsg);
       setReplyTo(null);
 
       try {
@@ -644,7 +731,7 @@ export function MessageThread({
         onUpdateMessage(tempId, { status: "failed" });
       }
     },
-    [conversation, onNewMessage, onUpdateMessage, t]
+    [conversation, appendOwnMessage, onUpdateMessage, t]
   );
 
   const handleSendMedia = useCallback(
@@ -671,7 +758,7 @@ export function MessageThread({
         created_at: new Date().toISOString(),
         reply_to_message_id: payload.replyToId,
       };
-      onNewMessage(optimisticMsg);
+      appendOwnMessage(optimisticMsg);
       setReplyTo(null);
 
       try {
@@ -715,7 +802,7 @@ export function MessageThread({
         // case Meta may be showing it to the customer right now.
       }
     },
-    [conversation, onNewMessage, onUpdateMessage, t],
+    [conversation, appendOwnMessage, onUpdateMessage, t],
   );
 
   const handleSendInteractive = useCallback(
@@ -736,7 +823,7 @@ export function MessageThread({
         created_at: new Date().toISOString(),
         reply_to_message_id: replyToId,
       };
-      onNewMessage(optimisticMsg);
+      appendOwnMessage(optimisticMsg);
 
       try {
         const res = await fetch("/api/whatsapp/send", {
@@ -769,7 +856,7 @@ export function MessageThread({
         onUpdateMessage(tempId, { status: "failed" });
       }
     },
-    [conversation, onNewMessage, onUpdateMessage, t],
+    [conversation, appendOwnMessage, onUpdateMessage, t],
   );
 
   const handleStatusChange = useCallback(
@@ -816,7 +903,7 @@ export function MessageThread({
         status: "sending",
         created_at: new Date().toISOString(),
       };
-      onNewMessage(optimisticMsg);
+      appendOwnMessage(optimisticMsg);
 
       try {
         const res = await fetch("/api/whatsapp/send", {
@@ -860,7 +947,7 @@ export function MessageThread({
         onUpdateMessage(tempId, { status: "failed" });
       }
     },
-    [conversation, onNewMessage, onUpdateMessage, t],
+    [conversation, appendOwnMessage, onUpdateMessage, t],
   );
 
   const handleRetryMessage = useCallback(
@@ -1264,101 +1351,132 @@ export function MessageThread({
       </div>
 
       {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <p className="text-sm text-muted-foreground">{t("noMessagesYet")}</p>
-            <p className="text-xs text-muted-foreground">
-              {t("sendTemplateHint")}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {hasOlderMessages && onOlderMessagesLoaded && (
-              <div className="flex justify-center">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void loadOlderMessages()}
-                  disabled={loadingOlder}
-                >
-                  {loadingOlder ? t("loadingOlder") : t("loadOlder")}
-                </Button>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={scrollRef}
+          onScroll={handleThreadScroll}
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+        >
+          <div ref={threadContentRef}>
+            {/* Spinner only for a first load. A resync refetches behind the
+                rendered thread; unmounting it would lose the scroll
+                position, any text selection and playing media. */}
+            {loading && messages.length === 0 ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <p className="text-sm text-muted-foreground">{t("noMessagesYet")}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t("sendTemplateHint")}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {hasOlderMessages && onOlderMessagesLoaded && (
+                  <div className="flex justify-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void loadOlderMessages()}
+                      disabled={loadingOlder}
+                    >
+                      {loadingOlder ? t("loadingOlder") : t("loadOlder")}
+                    </Button>
+                  </div>
+                )}
+                {messageGroups.map((group) => (
+                  <div key={group.date}>
+                    {/* Date separator */}
+                    <div className="mb-4 flex items-center justify-center">
+                      <span className="rounded-full bg-muted px-3 py-1 text-[10px] font-medium text-muted-foreground">
+                        {formatDateSeparator(group.date, t)}
+                      </span>
+                    </div>
+                    {/* Messages */}
+                    <div className="space-y-2">
+                      {group.messages.map((msg) => {
+                        const parent = msg.reply_to_message_id
+                          ? messagesById.get(msg.reply_to_message_id)
+                          : null;
+                        const reply = parent
+                          ? {
+                              authorLabel:
+                                parent.sender_type === "agent" || parent.sender_type === "bot"
+                                  ? t("me") 
+                                  : contact?.name || contact?.phone || t("unknown"),
+                              preview: buildReplyPreview(parent, tQuote),
+                              thumbnailUrl: quoteThumbnailUrl(parent),
+                              onClick: () => jumpToMessage(parent.id),
+                            }
+                          : null;
+                        const msgReactions = reactionsByMessageId.get(msg.id);
+                        // Toggle is computed at the call site — no extra hook.
+                        const handlePillToggle = (emoji: string) => {
+                          const current = businessReactionOn(msgReactions, msg.id);
+                          const next = current?.emoji === emoji ? "" : emoji;
+                          void postReaction(msg.id, next);
+                        };
+                        return (
+                          <div
+                            key={msg.id}
+                            data-message-id={msg.id}
+                            className={cn(
+                              "-mx-2 rounded-xl px-2 transition-colors duration-700",
+                              highlightedId === msg.id && "bg-primary/15",
+                            )}
+                          >
+                          <MessageActions
+                            message={msg}
+                            onReply={() => handleStartReply(msg)}
+                            onReact={(emoji) => {
+                              if (emoji) void postReaction(msg.id, emoji);
+                            }}
+                          >
+                            <MessageBubble
+                              message={msg}
+                              template={
+                                msg.content_type === "template"
+                                  ? matchMessageTemplate(msg, sentTemplates)
+                                  : null
+                              }
+                              reply={reply}
+                              reactions={msgReactions}
+                              onToggleReaction={handlePillToggle}
+                              onOpenMedia={handleMediaChange}
+                              onRetry={handleRetryMessage}
+                            />
+                          </MessageActions>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
-            {messageGroups.map((group) => (
-              <div key={group.date}>
-                {/* Date separator */}
-                <div className="mb-4 flex items-center justify-center">
-                  <span className="rounded-full bg-muted px-3 py-1 text-[10px] font-medium text-muted-foreground">
-                    {formatDateSeparator(group.date, t)}
-                  </span>
-                </div>
-                {/* Messages */}
-                <div className="space-y-2">
-                  {group.messages.map((msg) => {
-                    const parent = msg.reply_to_message_id
-                      ? messagesById.get(msg.reply_to_message_id)
-                      : null;
-                    const reply = parent
-                      ? {
-                          authorLabel:
-                            parent.sender_type === "agent" || parent.sender_type === "bot"
-                              ? t("me") 
-                              : contact?.name || contact?.phone || t("unknown"),
-                          preview: buildReplyPreview(parent, tQuote),
-                          thumbnailUrl: quoteThumbnailUrl(parent),
-                          onClick: () => jumpToMessage(parent.id),
-                        }
-                      : null;
-                    const msgReactions = reactionsByMessageId.get(msg.id);
-                    // Toggle is computed at the call site — no extra hook.
-                    const handlePillToggle = (emoji: string) => {
-                      const current = businessReactionOn(msgReactions, msg.id);
-                      const next = current?.emoji === emoji ? "" : emoji;
-                      void postReaction(msg.id, next);
-                    };
-                    return (
-                      <div
-                        key={msg.id}
-                        data-message-id={msg.id}
-                        className={cn(
-                          "-mx-2 rounded-xl px-2 transition-colors duration-700",
-                          highlightedId === msg.id && "bg-primary/15",
-                        )}
-                      >
-                      <MessageActions
-                        message={msg}
-                        onReply={() => handleStartReply(msg)}
-                        onReact={(emoji) => {
-                          if (emoji) void postReaction(msg.id, emoji);
-                        }}
-                      >
-                        <MessageBubble
-                          message={msg}
-                          template={
-                            msg.content_type === "template"
-                              ? matchMessageTemplate(msg, sentTemplates)
-                              : null
-                          }
-                          reply={reply}
-                          reactions={msgReactions}
-                          onToggleReaction={handlePillToggle}
-                          onOpenMedia={handleMediaChange}
-                          onRetry={handleRetryMessage}
-                        />
-                      </MessageActions>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
           </div>
+        </div>
+        {isScrolledUp && (
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            aria-label={
+              newBelowCount > 0
+                ? t("newMessagesBelow", { count: newBelowCount })
+                : t("jumpToLatest")
+            }
+            title={t("jumpToLatest")}
+            className="absolute bottom-4 right-6 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-md transition-colors hover:bg-muted"
+          >
+            <ArrowDown className="h-5 w-5" />
+            {newBelowCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                {newBelowCount > 99 ? "99+" : newBelowCount}
+              </span>
+            )}
+          </button>
         )}
       </div>
 

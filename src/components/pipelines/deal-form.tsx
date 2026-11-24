@@ -41,9 +41,10 @@ interface DealFormProps {
   onOpenChange: (open: boolean) => void;
   deal?: Deal | null;
   /**
-   * Pipeline the deal belongs to. When omitted (e.g. opened from the
-   * Inbox) the form loads the account's pipelines and stages itself and
-   * shows a pipeline picker.
+   * Pipeline the deal belongs to. When omitted (opened from the Inbox,
+   * or editing a deal on the board) the form loads the account's
+   * pipelines and stages itself and shows a pipeline picker, which lets
+   * the deal be moved to another pipeline.
    */
   pipelineId?: string;
   /** Stages of `pipelineId`. Omit together with `pipelineId`. */
@@ -92,7 +93,9 @@ export function DealForm({
 
   // Standalone mode (no pipelineId prop): pipelines/stages are loaded here.
   const standalone = pipelineId === undefined;
-  const [pipelineOptions, setPipelineOptions] = useState<Pipeline[]>([]);
+  const [pipelineOptions, setPipelineOptions] = useState<Pipeline[] | null>(
+    null, // not loaded yet
+  );
   const [selectedPipelineId, setSelectedPipelineId] = useState("");
   const [ownStages, setOwnStages] = useState<PipelineStage[]>([]);
   const effectivePipelineId = pipelineId ?? selectedPipelineId;
@@ -164,8 +167,9 @@ export function DealForm({
   }, [standalone, open, deal, supabase]);
 
   // Standalone mode: load the selected pipeline's stages. Keep the
-  // current stage if it belongs to this pipeline (editing), otherwise
-  // fall back to the first stage (new deal / pipeline switched).
+  // current stage if it belongs to this pipeline, then try the deal's
+  // saved stage (switched away and back), otherwise fall back to the
+  // first stage (new deal / moved to another pipeline).
   useEffect(() => {
     if (!standalone || !open || !selectedPipelineId) return;
     let cancelled = false;
@@ -178,15 +182,28 @@ export function DealForm({
       if (cancelled) return;
       const list = (data ?? []) as PipelineStage[];
       setOwnStages(list);
-      setStageId((prev) =>
-        list.some((s) => s.id === prev) ? prev : list[0]?.id ?? "",
+      setStageId(
+        (prev) =>
+          list.find((s) => s.id === prev)?.id ??
+          list.find((s) => s.id === deal?.stage_id)?.id ??
+          list[0]?.id ??
+          "",
       );
     })();
     return () => {
       cancelled = true;
     };
-  }, [standalone, open, selectedPipelineId, supabase]);
+  }, [standalone, open, selectedPipelineId, deal, supabase]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Drop the old pipeline's stages right away: until the new ones load
+  // the stage is empty, which blocks saving a pipeline/stage mismatch
+  // (such a deal would not show up in any board column).
+  function handlePipelineChange(id: string) {
+    setSelectedPipelineId(id);
+    setOwnStages([]);
+    setStageId("");
+  }
 
   // Load supporting data once the sheet is open
   const contactLocked = !!lockedContact;
@@ -439,15 +456,15 @@ export function DealForm({
             {standalone && (
               <div className="grid gap-2">
                 <Label className="text-muted-foreground">{t("pipelineLabel")}</Label>
-                {pipelineOptions.length === 0 ? (
+                {pipelineOptions?.length === 0 ? (
                   <p className="text-xs text-muted-foreground">{t("noPipelines")}</p>
                 ) : (
                   <select
                     value={selectedPipelineId}
-                    onChange={(e) => setSelectedPipelineId(e.target.value)}
+                    onChange={(e) => handlePipelineChange(e.target.value)}
                     className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary"
                   >
-                    {pipelineOptions.map((p) => (
+                    {pipelineOptions?.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name}
                       </option>

@@ -1,9 +1,10 @@
 'use client'
 
-import { useRouter } from '@/i18n/navigation'
-import { Briefcase, ChevronDown, Plus, Radio, UserPlus, Zap } from 'lucide-react'
+import { Link, useRouter } from '@/i18n/navigation'
+import { Briefcase, ChevronDown, Plus, Radio, Receipt, UserPlus, Zap } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 
+import { useCan } from '@/hooks/use-can'
 import { buttonVariants } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -53,6 +54,7 @@ export function OverviewHeader({
   const t = useTranslations('Dashboard.overview.header')
   const router = useRouter()
   const formatDuration = useFormatDuration()
+  const canSeeCosts = useCan('edit-settings')
   const firstName = name?.trim().split(/\s+/)[0] || null
 
   let context: string | null = null
@@ -88,6 +90,15 @@ export function OverviewHeader({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <WhatsAppHealthChip />
+        {canSeeCosts ? (
+          <Link
+            href="/dashboard/costs"
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            <Receipt aria-hidden />
+            {t('costs')}
+          </Link>
+        ) : null}
         <Tabs value={String(range)} onValueChange={(v) => onRangeChange(Number(v) as OverviewRange)}>
           <TabsList aria-label={t('rangeLabel')}>
             {OVERVIEW_RANGES.map((r) => (

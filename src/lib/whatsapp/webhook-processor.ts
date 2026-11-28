@@ -26,6 +26,7 @@ import {
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
 import { applyMessageStatus } from '@/lib/whatsapp/message-status-sync'
+import { parseStatusPricing } from '@/lib/whatsapp/pricing'
 import { enqueueMediaJob } from '@/lib/media-jobs/queue'
 import { mediaJobsEnabled } from '@/lib/reliability/flags'
 
@@ -123,6 +124,11 @@ export interface WhatsAppWebhookEntry {
          * explanation. See #535.
          */
         errors?: MetaStatusError[]
+        /**
+         * Per-message pricing (billable, category, type, pricing_model).
+         * Present on `sent` / `delivered`. See `src/lib/whatsapp/pricing.ts`.
+         */
+        pricing?: unknown
       }>
     }
     field: string
@@ -315,9 +321,12 @@ async function handleStatusUpdate(
     timestamp: string
     recipient_id: string
     errors?: MetaStatusError[]
+    pricing?: unknown
   },
   accountId: string | null
 ) {
+  const pricing = parseStatusPricing(status.pricing)
+
   // Meta's reason for a failed send (#535). Only read on `failed`; a
   // later non-failed status for the same wamid leaves the error
   // columns alone rather than clearing them, so the reason survives.
@@ -343,6 +352,7 @@ async function handleStatusUpdate(
         status: status.status,
         failure,
         statusAt: metaTimestampToIso(status.timestamp),
+        pricing,
       })
     : []
 
@@ -359,6 +369,7 @@ async function handleStatusUpdate(
     status: status.status,
     occurredAt: new Date(parseInt(status.timestamp) * 1000).toISOString(),
     failure,
+    pricing,
   })
 
   // 3) Webhook fan-out for messages we store (inbox / API sends).

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, MessageSquare, Pencil, Plus, Trash2, Zap } from "lucide-react";
+import { Loader2, MessageSquare, Pencil, Plus, Sparkles, Trash2, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 
@@ -25,6 +25,12 @@ import {
   type InteractiveMessagePayload,
 } from "@/lib/whatsapp/interactive";
 import type { QuickReply, QuickReplyKind } from "@/types";
+import {
+  QUICK_REPLY_LANGUAGES,
+  normalizeShortcut,
+  type QuickReplyLanguage,
+} from "@/lib/quick-replies/fields";
+import { STARTER_QUICK_REPLIES } from "@/lib/quick-replies/starter-pack";
 
 interface DraftState {
   id?: string;
@@ -32,6 +38,8 @@ interface DraftState {
   kind: QuickReplyKind;
   content_text: string;
   interactive_payload: InteractiveMessagePayload;
+  language: QuickReplyLanguage | null;
+  shortcut: string;
 }
 
 function emptyDraft(): DraftState {
@@ -40,6 +48,8 @@ function emptyDraft(): DraftState {
     kind: "text",
     content_text: "",
     interactive_payload: blankButtonsPayload(),
+    language: null,
+    shortcut: "",
   };
 }
 
@@ -74,6 +84,8 @@ export function QuickRepliesManager() {
       content_text: qr.content_text ?? "",
       interactive_payload:
         qr.interactive_payload ?? blankButtonsPayload(),
+      language: (qr.language as QuickReplyLanguage | null) ?? null,
+      shortcut: qr.shortcut ?? "",
     });
 
   const save = useCallback(async () => {
@@ -82,10 +94,19 @@ export function QuickRepliesManager() {
       toast.error(t("nameRequired"));
       return;
     }
+    if (!normalizeShortcut(draft.shortcut).ok) {
+      toast.error(t("shortcutInvalid"));
+      return;
+    }
+    const common = {
+      title: draft.title,
+      language: draft.language,
+      shortcut: draft.shortcut,
+    };
     const payload =
       draft.kind === "interactive"
-        ? { title: draft.title, kind: "interactive", interactive_payload: draft.interactive_payload }
-        : { title: draft.title, kind: "text", content_text: draft.content_text };
+        ? { ...common, kind: "interactive", interactive_payload: draft.interactive_payload }
+        : { ...common, kind: "text", content_text: draft.content_text };
 
     setSaving(true);
     try {
@@ -112,6 +133,32 @@ export function QuickRepliesManager() {
     }
   }, [draft, load, t]);
 
+  // One click to add the kk/ru starter set. Skips any whose shortcut the
+  // account already uses, so running it twice adds nothing.
+  const [addingStarters, setAddingStarters] = useState(false);
+  const addStarters = useCallback(async () => {
+    setAddingStarters(true);
+    const taken = new Set(items.map((i) => i.shortcut).filter(Boolean));
+    let added = 0;
+    try {
+      for (const starter of STARTER_QUICK_REPLIES) {
+        if (taken.has(starter.shortcut)) continue;
+        const res = await fetch("/api/quick-replies", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...starter, kind: "text" }),
+        });
+        if (res.ok) added++;
+      }
+      toast.success(t("startersAdded", { count: added }));
+      await load();
+    } catch {
+      toast.error(t("saveError"));
+    } finally {
+      setAddingStarters(false);
+    }
+  }, [items, load, t]);
+
   const remove = useCallback(
     async (id: string) => {
       if (!window.confirm(t("deleteConfirm"))) return;
@@ -131,10 +178,20 @@ export function QuickRepliesManager() {
         title={t("title")}
         description={t("description")}
         action={
-          <Button onClick={openCreate}>
-            <Plus className="mr-1 h-4 w-4" />
-            {t("new")}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={addStarters} disabled={addingStarters || loading}>
+              {addingStarters ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="mr-1 h-4 w-4" />
+              )}
+              {t("addStarters")}
+            </Button>
+            <Button onClick={openCreate}>
+              <Plus className="mr-1 h-4 w-4" />
+              {t("new")}
+            </Button>
+          </div>
         }
       />
 
@@ -159,7 +216,19 @@ export function QuickRepliesManager() {
                 <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               )}
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-foreground">{qr.title}</p>
+                <p className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
+                  <span className="truncate">{qr.title}</span>
+                  {qr.shortcut ? (
+                    <code className="rounded bg-muted px-1 text-xs font-normal text-muted-foreground">
+                      /{qr.shortcut}
+                    </code>
+                  ) : null}
+                  {qr.language ? (
+                    <span className="rounded border border-border px-1 text-[10px] font-normal uppercase text-muted-foreground">
+                      {qr.language}
+                    </span>
+                  ) : null}
+                </p>
                 <p className="truncate text-xs text-muted-foreground">
                   {qr.kind === "interactive" && qr.interactive_payload
                     ? interactivePayloadPreviewText(qr.interactive_payload)
@@ -200,6 +269,35 @@ export function QuickRepliesManager() {
                   className="bg-muted text-foreground"
                 />
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">{t("shortcutLabel")}</label>
+                  <Input
+                    value={draft.shortcut}
+                    onChange={(e) => setDraft({ ...draft, shortcut: e.target.value })}
+                    placeholder={t("shortcutPlaceholder")}
+                    className="bg-muted text-foreground"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">{t("languageLabel")}</label>
+                  <div className="flex gap-2">
+                    <KindTab
+                      active={draft.language === null}
+                      label={t("languageAny")}
+                      onClick={() => setDraft({ ...draft, language: null })}
+                    />
+                    {QUICK_REPLY_LANGUAGES.map((lang) => (
+                      <KindTab
+                        key={lang}
+                        active={draft.language === lang}
+                        label={t(`language_${lang}`)}
+                        onClick={() => setDraft({ ...draft, language: lang })}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
               <div className="flex gap-2">
                 <KindTab
                   active={draft.kind === "text"}
@@ -219,6 +317,9 @@ export function QuickRepliesManager() {
                   placeholder={t("textPlaceholder")}
                   className="min-h-28 bg-muted text-foreground"
                 />
+              ) : null}
+              {draft.kind === "text" ? (
+                <p className="text-xs text-muted-foreground">{t("placeholdersHint")}</p>
               ) : (
                 <InteractiveBuilder
                   value={draft.interactive_payload}

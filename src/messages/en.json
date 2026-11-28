@@ -1557,7 +1557,23 @@
       },
       "uploadFailed": "Upload failed.",
       "recordingTooLong": "Recording is too long (over 16 MB).",
-      "recordingUnsupported": "Voice recording isn't supported in this browser."
+      "recordingUnsupported": "Voice recording isn't supported in this browser.",
+      "quickRepliesSearch": "Search by name, text or /shortcut",
+      "quickRepliesAllLanguages": "All",
+      "quickRepliesNoMatch": "No quick replies match.",
+      "duplicateNudge": "You already sent this message at {time}. Send it again?",
+      "duplicateCancel": "Edit",
+      "duplicateSendAnyway": "Send anyway",
+      "burstNudge": "{count, plural, other {# messages in a row}} — each one is billed. Put the rest in one message if you can.",
+      "slashHint": "↑↓ to choose · Enter or Tab to insert · Esc to type a plain slash",
+      "productSearch": "Find product",
+      "productSearchPlaceholder": "Name or SKU, e.g. S-0122",
+      "productSearchHint": "Type at least 2 characters.",
+      "productSearchEmpty": "No products found.",
+      "productSearchFailed": "Couldn't reach the product catalog.",
+      "productSearchOff": "Product lookup is turned off.",
+      "productNoStoreStock": "not in store stock",
+      "productSearchFootnote": "Adds the name and price to your message. Check stock before confirming to the customer."
     },
     "sidebar": {
       "contactInfo": "Contact Info",
@@ -3268,7 +3284,9 @@
     "quickReplies": {
       "titleRequired": "title is required",
       "contentTextRequired": "content_text is required for text quick replies",
-      "kindInvalid": "kind must be \"text\" or \"interactive\""
+      "kindInvalid": "kind must be \"text\" or \"interactive\"",
+      "shortcutInvalid": "shortcut must be one word of letters, digits, - or _ (max 32)",
+      "shortcutTaken": "Another quick reply already uses this shortcut"
     },
     "broadcast": {
       "recipientsRequired": "Provide either `recipients` (preferred) or `phone_numbers` — must be a non-empty array",
@@ -3514,7 +3532,8 @@
         "newContact": "New contact",
         "newDeal": "New deal",
         "newBroadcast": "New broadcast",
-        "newAutomation": "New automation"
+        "newAutomation": "New automation",
+        "costs": "Costs"
       },
       "pipeline": {
         "title": "Pipeline",
@@ -3801,7 +3820,17 @@
       "kindInteractive": "Interactive",
       "textPlaceholder": "The message text to insert",
       "cancel": "Cancel",
-      "save": "Save"
+      "save": "Save",
+      "shortcutLabel": "Shortcut",
+      "shortcutPlaceholder": "e.g. price — type /price in the inbox",
+      "shortcutInvalid": "Shortcuts are one word: letters, digits, - or _.",
+      "languageLabel": "Language",
+      "languageAny": "Any",
+      "language_kk": "Kazakh",
+      "language_ru": "Russian",
+      "placeholdersHint": "Use '{{name}}' for the customer's name and '{{agent}}' for yours. Answer everything in one message: each message sent is billed.",
+      "addStarters": "Add starter replies",
+      "startersAdded": "{count, plural, =0 {Starter replies are already added.} other {Added # starter replies.}}"
     }
   },
   "UiPrimitives": {
@@ -4152,6 +4181,90 @@
       "minutesAgo": "{n}m ago",
       "hoursAgo": "{n}h ago",
       "daysAgo": "{n}d ago"
+    }
+  },
+  "Costs": {
+    "title": "WhatsApp costs",
+    "subtitle": "What Meta bills for this number, and which conversations drive it. Service replies are billed per message after the first 1,000 each month.",
+    "adminOnly": "Only admins can see WhatsApp costs.",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
+    "sync": "Sync from Meta",
+    "syncing": "Syncing…",
+    "syncFailed": "Couldn't sync from Meta",
+    "lastSynced": "Meta figures synced {when}.",
+    "neverSynced": "Meta figures not synced yet.",
+    "loadFailed": "Couldn't load cost data.",
+    "retry": "Retry",
+    "kpi": {
+      "metaCost": "Meta cost this month",
+      "projected": "On track for about {amount} this month",
+      "noData": "No Meta data yet",
+      "paidReplies": "Paid service replies",
+      "paidRepliesHint": "{rate} each · {free} free",
+      "templates": "Templates",
+      "templatesHint": "Marketing, utility and authentication",
+      "bursts": "Back-to-back messages",
+      "burstsHint": "{count} sent within a minute of the previous one. Merging half would save about {amount}.",
+      "burstsHintNoRate": "{count} sent within a minute of the previous one."
+    },
+    "daily": {
+      "title": "Cost per day",
+      "description": "Meta's reported cost, by day.",
+      "cost": "Cost",
+      "empty": "No Meta cost data for this month",
+      "emptyHint": "Use Sync from Meta to pull the latest figures."
+    },
+    "breakdown": {
+      "title": "By category",
+      "description": "Meta's breakdown by message category and recipient country.",
+      "empty": "No Meta data for this month.",
+      "category": "Category",
+      "country": "Country",
+      "messages": "Messages",
+      "cost": "Cost",
+      "rate": "Per message",
+      "categories": {
+        "service": "Service replies",
+        "marketing": "Marketing",
+        "utility": "Utility",
+        "authentication": "Authentication",
+        "other": "Other"
+      },
+      "types": {
+        "free_customer_service": "free",
+        "free_entry_point": "free (ad)",
+        "other": "other"
+      }
+    },
+    "team": {
+      "title": "By agent",
+      "description": "Messages each agent sent this month and their share of the service-reply cost.",
+      "empty": "No agent messages this month.",
+      "agent": "Agent",
+      "sent": "Sent",
+      "chats": "Chats",
+      "perChat": "Per chat",
+      "bursts": "Back-to-back",
+      "repeats": "Repeated",
+      "voiceNotes": "Voice notes",
+      "estCost": "Est. cost",
+      "dealsWon": "Deals won",
+      "perDeal": "Cost / deal",
+      "unnamed": "Unnamed",
+      "footnote": "Meta bills the number, not the agent: cost is split by each agent's share of messages. Judge by cost per deal, not by volume alone."
+    },
+    "invoice": {
+      "title": "Invoice check",
+      "description": "Enter the amount on Meta's invoice to compare it with the analytics.",
+      "invoiced": "Invoiced",
+      "metaReported": "Meta analytics",
+      "gap": "Difference",
+      "none": "No invoice entered for this month.",
+      "placeholder": "Invoice amount",
+      "save": "Save",
+      "update": "Update",
+      "saveFailed": "Couldn't save the invoice"
     }
   }
 }

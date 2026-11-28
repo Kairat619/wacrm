@@ -52,6 +52,10 @@ import {
 import type { RetryClass } from '@/lib/whatsapp/outbound-failure';
 import type { MessageTemplate } from '@/types';
 import {
+  defaultSendOrigin,
+  type MessageOrigin,
+} from '@/lib/whatsapp/message-origin';
+import {
   resolveTemplateRow,
   templateBodyParams,
   templateContentText,
@@ -136,6 +140,8 @@ export interface SendMessageParams {
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
   senderId?: string | null;
+  /** Source of the send for cost attribution; defaults from `senderId`. */
+  origin?: MessageOrigin;
   /**
    * Caller-generated id for this send. A repeat with the same id returns the
    * first result rather than sending again. Persist-first path only.
@@ -428,6 +434,7 @@ export async function sendMessageToConversation(
     conversation_id: conversationId,
     sender_type: 'agent',
     sender_id: senderId ?? null,
+    origin: params.origin ?? defaultSendOrigin(senderId),
     content_type: messageType,
     content_text: persistedText,
     media_url:

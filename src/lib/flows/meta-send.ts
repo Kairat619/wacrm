@@ -17,6 +17,7 @@ import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity'
 import { assertConversationInAccount } from '@/lib/whatsapp/conversation-scope'
 import { supabaseAdmin } from './admin-client'
 import { getT } from '@/lib/i18n/translate'
+import type { MessageOrigin } from '@/lib/whatsapp/message-origin'
 
 const t = getT('LibErrors')
 
@@ -75,6 +76,8 @@ interface SendTextEngineArgs {
    *  badges it as an AI reply. Only the auto-reply bot sets this;
    *  deterministic Flow/automation sends leave it false. */
   aiGenerated?: boolean
+  /** Cost-attribution source; defaults to 'flow' ('ai' when aiGenerated). */
+  origin?: MessageOrigin
 }
 
 /**
@@ -163,6 +166,7 @@ export async function engineSendText(
     message_id: waMessageId,
     status: 'sent',
     ai_generated: args.aiGenerated ?? false,
+    origin: args.origin ?? (args.aiGenerated ? 'ai' : 'flow'),
   })
   if (msgErr) {
     throw new Error(t('send.dbInsertFailed', { message: msgErr.message }))
@@ -192,6 +196,7 @@ interface SendMediaEngineArgs {
   caption?: string
   /** Document-only; ignored by Meta for image/video. */
   filename?: string
+  origin?: MessageOrigin
 }
 
 /**
@@ -284,6 +289,7 @@ export async function engineSendMedia(
     content_text: args.caption ?? null,
     message_id: waMessageId,
     status: 'sent',
+    origin: args.origin ?? 'flow',
   })
   if (msgErr) {
     throw new Error(t('send.dbInsertFailed', { message: msgErr.message }))
@@ -311,6 +317,7 @@ interface SendInteractiveButtonsEngineArgs {
   buttons: InteractiveButton[]
   headerText?: string
   footerText?: string
+  origin?: MessageOrigin
 }
 
 interface SendInteractiveListEngineArgs {
@@ -323,6 +330,7 @@ interface SendInteractiveListEngineArgs {
   sections: InteractiveListSection[]
   headerText?: string
   footerText?: string
+  origin?: MessageOrigin
 }
 
 /**
@@ -481,6 +489,7 @@ async function sendInteractiveViaMeta(
     interactive_payload: interactivePayload,
     message_id: waMessageId,
     status: 'sent',
+    origin: input.origin ?? 'flow',
   })
   if (msgErr) {
     throw new Error(t('send.dbInsertFailed', { message: msgErr.message }))

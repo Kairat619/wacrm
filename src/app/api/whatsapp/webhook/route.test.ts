@@ -970,6 +970,7 @@ describe('status webhook: failed statuses keep Meta\'s reason (#535)', () => {
         details: FAILED_STATUS.errors[0].error_data.details,
       },
       statusAt: new Date(1700000100 * 1000).toISOString(),
+      pricing: null,
     })
   })
 

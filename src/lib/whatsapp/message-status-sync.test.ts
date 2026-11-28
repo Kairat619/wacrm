@@ -48,6 +48,10 @@ function fakeDb(tables: Record<string, Row[]>) {
         filters.push((row) => values.includes(row[columnOf(column)]))
         return builder
       },
+      is(column: string, value: unknown) {
+        filters.push((row) => (row[columnOf(column)] ?? null) === value)
+        return builder
+      },
       lt(column: string, value: string) {
         filters.push((row) => String(row[column]) < value)
         return builder
@@ -154,6 +158,35 @@ describe('applyMessageStatus', () => {
     expect(tables.pending_message_statuses.map((r) => r.wamid)).toEqual(['wamid.1'])
   })
 
+  it('stamps pricing once and keeps the first value', async () => {
+    const tables = { messages: [message()] }
+    const db = fakeDb(tables)
+    await applyMessageStatus(db, 'acc-1', status({ status: 'sent', pricing: { billable: true, category: 'service', type: 'regular', model: 'pmp' } }))
+    expect(tables.messages[0]).toMatchObject({
+      pricing_billable: true,
+      pricing_category: 'service',
+      pricing_type: 'regular',
+      pricing_model: 'pmp',
+      priced_at: '2026-10-16T10:00:00.000Z',
+    })
+    await applyMessageStatus(
+      db,
+      'acc-1',
+      status({ status: 'delivered', statusAt: '2026-10-16T11:00:00.000Z', pricing: { billable: false, category: 'utility', type: 'free_customer_service', model: 'pmp' } }),
+    )
+    expect(tables.messages[0]).toMatchObject({
+      status: 'delivered',
+      pricing_category: 'service',
+      priced_at: '2026-10-16T10:00:00.000Z',
+    })
+  })
+
+  it('records pricing even when the status does not advance', async () => {
+    const tables = { messages: [message({ status: 'read' })] }
+    await applyMessageStatus(fakeDb(tables), 'acc-1', status({ status: 'delivered', pricing: { billable: true, category: 'service', type: 'regular', model: 'pmp' } }))
+    expect(tables.messages[0]).toMatchObject({ status: 'read', pricing_category: 'service' })
+  })
+
   it('drops statuses outside the messages CHECK constraint', async () => {
     const tables: Record<string, Row[]> = { messages: [] }
     await applyMessageStatus(fakeDb(tables), 'acc-1', status({ status: 'deleted' }))
@@ -184,6 +217,15 @@ describe('applyPendingMessageStatuses', () => {
     }
     await applyPendingMessageStatuses(fakeDb(tables), 'acc-1', 'wamid.1')
     expect(tables.messages[0].status).toBe('read')
+  })
+
+  it('carries parked pricing onto the inserted row', async () => {
+    const tables: Record<string, Row[]> = { messages: [] }
+    await applyMessageStatus(fakeDb(tables), 'acc-1', status({ status: 'sent', pricing: { billable: true, category: 'service', type: 'regular', model: 'pmp' } }))
+    expect(tables.pending_message_statuses[0].pricing).toEqual({ billable: true, category: 'service', type: 'regular', model: 'pmp' })
+    tables.messages.push(message({ status: 'sending' }))
+    await applyPendingMessageStatuses(fakeDb(tables), 'acc-1', 'wamid.1')
+    expect(tables.messages[0]).toMatchObject({ pricing_billable: true, pricing_category: 'service' })
   })
 
   it('leaves another account’s parked status alone', async () => {

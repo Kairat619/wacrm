@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { allowedPredecessors, isRecipientStatus } from '@/lib/broadcast-status';
+import { pricingColumns, type MessagePricing } from '@/lib/whatsapp/pricing';
 
 export const BROADCAST_REPLY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -15,6 +16,7 @@ export interface RecipientStatusEvent {
   status: string;
   occurredAt: string;
   failure: RecipientStatusFailure | null;
+  pricing?: MessagePricing | null;
 }
 
 export type RecipientStatusOutcome = 'updated' | 'skipped' | 'error';
@@ -31,6 +33,14 @@ export async function applyBroadcastRecipientStatus(
   event: RecipientStatusEvent
 ): Promise<RecipientStatusOutcome> {
   if (!isRecipientStatus(event.status)) return 'skipped';
+  if (event.pricing) {
+    await recordRecipientPricing(
+      db,
+      event.whatsappMessageId,
+      event.pricing,
+      event.occurredAt
+    );
+  }
   const predecessors = allowedPredecessors(event.status);
   if (predecessors.length === 0) return 'skipped';
 
@@ -52,6 +62,27 @@ export async function applyBroadcastRecipientStatus(
     return 'error';
   }
   return data && data.length > 0 ? 'updated' : 'skipped';
+}
+
+/**
+ * Pricing arrives on `sent` and `delivered`; stamp it once, independent of
+ * whether the status itself advances (a late `sent` after `delivered` still
+ * carries useful pricing).
+ */
+async function recordRecipientPricing(
+  db: SupabaseClient,
+  whatsappMessageId: string,
+  pricing: MessagePricing,
+  pricedAt: string
+): Promise<void> {
+  const { error } = await db
+    .from('broadcast_recipients')
+    .update(pricingColumns(pricing, pricedAt))
+    .eq('whatsapp_message_id', whatsappMessageId)
+    .is('pricing_category', null);
+  if (error) {
+    console.error('Error recording broadcast recipient pricing:', error);
+  }
 }
 
 interface LatestBroadcastRecipient {

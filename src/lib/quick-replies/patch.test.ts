@@ -79,4 +79,19 @@ describe('resolveQuickReplyPatch', () => {
     const legacy = { ...textRow, interactive_payload: { junk: true } }
     expect(resolveQuickReplyPatch({ title: 'x' }, legacy).ok).toBe(true)
   })
+
+  it('normalizes language and shortcut', () => {
+    expect(resolveQuickReplyPatch({ language: 'kk', shortcut: '/Baga' }, textRow)).toEqual({
+      ok: true,
+      update: { language: 'kk', shortcut: 'baga' },
+    })
+    expect(resolveQuickReplyPatch({ language: 'en', shortcut: '' }, textRow)).toEqual({
+      ok: true,
+      update: { language: null, shortcut: null },
+    })
+  })
+
+  it('rejects a shortcut with spaces', () => {
+    expect(resolveQuickReplyPatch({ shortcut: 'two words' }, textRow).ok).toBe(false)
+  })
 })

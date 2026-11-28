@@ -89,7 +89,13 @@ export async function engineSendInteractive(
   args: SendInteractiveArgs,
 ): Promise<{ whatsapp_message_id: string }> {
   const { payload, accountId, userId, conversationId, contactId } = args
-  const common = { accountId, userId, conversationId, contactId }
+  const common = {
+    accountId,
+    userId,
+    conversationId,
+    contactId,
+    origin: 'automation' as const,
+  }
   if (payload.kind === 'buttons') {
     return engineSendInteractiveButtons({
       ...common,
@@ -236,6 +242,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   const { error: msgErr } = await db.from('messages').insert({
     conversation_id: input.conversationId,
     sender_type: 'bot',
+    origin: 'automation',
     content_type,
     content_text,
     media_url: templateHeaderMediaUrl(templateRow),

@@ -17,6 +17,11 @@ const tablesWithoutDomainData = new Set([
   // Every job references a message in the account, and the function already
   // refuses when the account has conversations, so a job is never the only data.
   "media_jobs",
+  // Cost reporting (migration 064). Snapshots exist only for an account with
+  // a WhatsApp config, which the function already checks; an invoice entry is
+  // a figure copied from Meta, not data the account would lose.
+  "whatsapp_billing_daily",
+  "whatsapp_invoices",
 ]);
 
 function accountScopedTables(): Set<string> {

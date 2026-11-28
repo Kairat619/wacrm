@@ -1336,3 +1336,84 @@ export async function downloadMedia(
   const buffer = Buffer.from(await response.arrayBuffer())
   return { buffer, contentType }
 }
+
+// ============================================================
+// Pricing analytics (WABA level)
+// ============================================================
+
+export interface PricingDataPoint {
+  /** Unix seconds, start of the bucket. */
+  start: number
+  end: number
+  volume: number
+  cost: number
+  country?: string
+  pricing_type?: string
+  pricing_category?: string
+}
+
+export interface GetPricingAnalyticsArgs {
+  wabaId: string
+  accessToken: string
+  /** Unix seconds, inclusive. */
+  start: number
+  /** Unix seconds, exclusive. */
+  end: number
+}
+
+/**
+ * Meta's own per-day message volume and cost for the WABA, split by
+ * pricing category, pricing type and recipient country. This is the
+ * source of truth for what the account is billed; the per-message
+ * `pricing` block only attributes it.
+ */
+export async function getPricingAnalytics(
+  args: GetPricingAnalyticsArgs
+): Promise<PricingDataPoint[]> {
+  const { wabaId, accessToken, start, end } = args
+  const field =
+    `pricing_analytics.start(${Math.floor(start)}).end(${Math.floor(end)})` +
+    `.granularity(DAILY)` +
+    `.dimensions(["PRICING_CATEGORY","PRICING_TYPE","COUNTRY"])`
+  let url: string | undefined =
+    `${META_API_BASE}/${wabaId}?fields=${encodeURIComponent(field)}`
+  const points: PricingDataPoint[] = []
+  for (let page = 0; url && page < 20; page++) {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (!response.ok) {
+      await throwMetaError(response, `Meta API error: ${response.status}`)
+    }
+    const body = (await response.json()) as {
+      pricing_analytics?: PricingAnalyticsPage
+    } & PricingAnalyticsPage
+    // The first page nests under `pricing_analytics`; `paging.next`
+    // pages return the edge itself.
+    const pageData = body.pricing_analytics ?? body
+    for (const block of pageData.data ?? []) {
+      points.push(...(block.data_points ?? []))
+    }
+    url = pageData.paging?.next
+  }
+  return points
+}
+
+interface PricingAnalyticsPage {
+  data?: Array<{ data_points?: PricingDataPoint[] }>
+  paging?: { next?: string }
+}
+
+/** The WABA's billing currency (e.g. "USD"), or null when Meta omits it. */
+export async function getWabaCurrency(args: {
+  wabaId: string
+  accessToken: string
+}): Promise<string | null> {
+  const response = await fetch(
+    `${META_API_BASE}/${args.wabaId}?fields=currency`,
+    { headers: { Authorization: `Bearer ${args.accessToken}` } }
+  )
+  if (!response.ok) return null
+  const body = (await response.json()) as { currency?: unknown }
+  return typeof body.currency === 'string' ? body.currency : null
+}

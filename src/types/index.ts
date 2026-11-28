@@ -728,6 +728,10 @@ export interface QuickReply {
   content_text?: string | null;
   /** Set when `kind === 'interactive'`. */
   interactive_payload?: InteractiveMessagePayload | null;
+  /** 'kk' | 'ru', or null for any language (migration 066). */
+  language?: string | null;
+  /** Typed as "/shortcut" in the composer (migration 066). */
+  shortcut?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -7,6 +7,7 @@ import {
   type StoredQuickReply,
 } from '@/lib/quick-replies/patch'
 import { getT } from '@/lib/i18n/translate'
+import { isUniqueViolation } from '@/lib/contacts/dedupe'
 
 const t = getT('Api')
 
@@ -58,6 +59,9 @@ export async function PATCH(
     .update(patch.update)
     .eq('id', id)
     .eq('account_id', ctx.accountId)
+  if (error && isUniqueViolation(error)) {
+    return NextResponse.json({ error: t('quickReplies.shortcutTaken') }, { status: 409 })
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
 }

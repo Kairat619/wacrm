@@ -7,6 +7,7 @@ import {
 } from './message-status'
 import { handleStatusFailure } from './outbound-state'
 import { outboundPersistFirstEnabled } from '@/lib/reliability/flags'
+import { pricingColumns, type MessagePricing } from './pricing'
 
 export interface MessageStatusFailure {
   code: number
@@ -19,6 +20,8 @@ export interface IncomingMessageStatus {
   status: string
   failure: MessageStatusFailure | null
   statusAt: string | null
+  /** Meta's pricing block, when the status carried one. */
+  pricing?: MessagePricing | null
 }
 
 export interface AdvancedMessage {
@@ -35,6 +38,7 @@ interface PendingStatusRow {
   error_code: number | null
   error_title: string | null
   error_details: string | null
+  pricing?: MessagePricing | null
 }
 
 export const PENDING_STATUS_TTL_MS = 24 * 60 * 60 * 1000
@@ -89,6 +93,28 @@ async function advanceMessages(
   return (data ?? []) as AdvancedMessage[]
 }
 
+/**
+ * Stamp Meta's pricing onto the rows once. Later statuses (delivered after
+ * sent) repeat the same block, so only rows without pricing are touched.
+ * Best-effort: a failure here never blocks the status update.
+ */
+async function recordPricing(
+  db: SupabaseClient,
+  ids: string[],
+  pricing: MessagePricing | null | undefined,
+  pricedAt: string | null,
+): Promise<void> {
+  if (!pricing || ids.length === 0) return
+  const { error } = await db
+    .from('messages')
+    .update(pricingColumns(pricing, pricedAt ?? new Date().toISOString()))
+    .in('id', ids)
+    .is('pricing_category', null)
+  if (error) {
+    console.error('[message-status] recording pricing failed:', error.message)
+  }
+}
+
 async function storePendingStatus(
   db: SupabaseClient,
   accountId: string,
@@ -103,6 +129,7 @@ async function storePendingStatus(
       error_title: incoming.failure?.title ?? null,
       error_details: incoming.failure?.details ?? null,
       status_at: incoming.statusAt,
+      pricing: incoming.pricing ?? null,
     },
     { onConflict: 'account_id,wamid,status', ignoreDuplicates: true },
   )
@@ -129,7 +156,7 @@ export async function applyPendingMessageStatuses(
 
   const { data: pending, error } = await db
     .from('pending_message_statuses')
-    .select('status, error_code, error_title, error_details')
+    .select('status, error_code, error_title, error_details, pricing')
     .eq('account_id', accountId)
     .eq('wamid', wamid)
 
@@ -142,6 +169,14 @@ export async function applyPendingMessageStatuses(
 
   const rows = await findAccountMessages(db, accountId, wamid)
   if (!rows || rows.length === 0) return []
+
+  const parkedPricing = parked.find((p) => p.pricing)?.pricing ?? null
+  await recordPricing(
+    db,
+    rows.map((row) => row.id),
+    parkedPricing,
+    null,
+  )
 
   const advanced: AdvancedMessage[] = []
   for (const row of rows) {
@@ -184,6 +219,12 @@ export async function applyMessageStatus(
   if (!rows) return []
   if (rows.length > 0) {
     const advanced = await advanceMessages(db, rows, incoming.status, incoming.failure)
+    await recordPricing(
+      db,
+      rows.map((row) => row.id),
+      incoming.pricing,
+      incoming.statusAt,
+    )
     if (incoming.status === 'failed' && outboundPersistFirstEnabled()) {
       await handleStatusFailure(
         db,

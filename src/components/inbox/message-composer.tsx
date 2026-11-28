@@ -1,6 +1,13 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect, KeyboardEvent } from 'react';
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  KeyboardEvent,
+} from 'react';
 import {
   Send,
   LayoutTemplate,
@@ -15,6 +22,7 @@ import {
   Sparkles,
   Plus,
   MessageSquareDashed,
+  Package,
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -55,6 +63,18 @@ import {
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive';
 import type { InteractiveMessagePayload, QuickReply } from '@/types';
 import { QuickReplyPicker } from './quick-reply-picker';
+import { ProductSearchDialog } from './product-search-dialog';
+import { useQuickReplies } from '@/hooks/use-quick-replies';
+import {
+  renderPlaceholders,
+  shortcutSuggestions,
+  type PlaceholderValues,
+} from '@/lib/quick-replies/fields';
+import {
+  currentBurstLength,
+  findDuplicateSend,
+  type NudgeMessage,
+} from '@/lib/inbox/send-nudges';
 import { EmojiPicker } from './emoji-picker';
 
 /** Media content types an agent can send from the composer. */
@@ -123,6 +143,12 @@ interface MessageComposerProps {
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
+  /** Values for `{{name}}` / `{{agent}}` in quick replies. */
+  placeholderValues?: PlaceholderValues;
+  /** The loaded thread, for the duplicate / back-to-back nudges. */
+  recentMessages?: readonly NudgeMessage[];
+  /** Show cost nudges (per-user beta `cost-nudges`). Never blocks a send. */
+  costNudges?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -140,6 +166,9 @@ export function MessageComposer({
   onOpenTemplates,
   replyTo,
   onClearReply,
+  placeholderValues,
+  recentMessages,
+  costNudges = false,
 }: MessageComposerProps) {
   const t = useTranslations('inbox.composer');
   const tGate = useTranslations("GatedButton");
@@ -173,6 +202,7 @@ export function MessageComposer({
     useState<InteractiveMessagePayload>(blankButtonsPayload);
   const [savingQuickReply, setSavingQuickReply] = useState(false);
   const [quickReplyOpen, setQuickReplyOpen] = useState(false);
+  const [productSearchOpen, setProductSearchOpen] = useState(false);
 
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // attachment; `busy` covers the upload/transcode window.
@@ -257,9 +287,43 @@ export function MessageComposer({
     el.style.height = `${Math.min(el.scrollHeight, 96)}px`;
   }, []);
 
+  // Duplicate nudge: the first press on a repeated text shows a notice;
+  // a second press (or "Send anyway") sends it.
+  const [pendingDuplicate, setDuplicateOf] = useState<{
+    text: string;
+    at: string;
+  } | null>(null);
+  // Editing the text dismisses the notice.
+  const duplicateOf =
+    pendingDuplicate && pendingDuplicate.text === text.trim()
+      ? pendingDuplicate
+      : null;
+
+  // Re-evaluated on a timer so the back-to-back hint clears itself once
+  // the minute passes.
+  const [nudgeNow, setNudgeNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!costNudges) return;
+    const id = window.setInterval(() => setNudgeNow(Date.now()), 15_000);
+    return () => window.clearInterval(id);
+  }, [costNudges]);
+  const burstLength =
+    costNudges && recentMessages
+      ? currentBurstLength(recentMessages, nudgeNow)
+      : 0;
+
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
     if (!trimmed || sending || sessionExpired) return;
+
+    if (costNudges && recentMessages && duplicateOf?.text !== trimmed) {
+      const earlier = findDuplicateSend(trimmed, recentMessages, Date.now());
+      if (earlier) {
+        setDuplicateOf({ text: trimmed, at: earlier.created_at });
+        return;
+      }
+    }
+    setDuplicateOf(null);
 
     setSending(true);
     try {
@@ -271,21 +335,69 @@ export function MessageComposer({
     } finally {
       setSending(false);
     }
-  }, [text, sending, sessionExpired, onSend, replyTo?.id]);
+  }, [
+    text,
+    sending,
+    sessionExpired,
+    onSend,
+    replyTo?.id,
+    costNudges,
+    recentMessages,
+    duplicateOf,
+  ]);
+
+  // "/shortcut" suggestions. Quick replies load the first time the agent
+  // types a slash at the start of an empty draft.
+  const [slashLoaded, setSlashLoaded] = useState(false);
+  const { items: quickReplyItems } = useQuickReplies(slashLoaded);
+  const suggestions = useMemo(
+    () => shortcutSuggestions(quickReplyItems, text),
+    [quickReplyItems, text]
+  );
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+  // Assigned once handlePickQuickReply exists (it is declared later).
+  const pickQuickReplyRef = useRef<
+    ((qr: QuickReply, replaceDraft?: boolean) => void) | null
+  >(null);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (suggestions.length > 0) {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          const step = e.key === "ArrowDown" ? 1 : -1;
+          setSuggestionIndex(
+            (i) => (i + step + suggestions.length) % suggestions.length
+          );
+          return;
+        }
+        if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+          e.preventDefault();
+          pickQuickReplyRef.current?.(
+            suggestions[Math.min(suggestionIndex, suggestions.length - 1)],
+            true
+          );
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setText(`${text} `);
+          return;
+        }
+      }
       if (e.key === "Enter" && !e.shiftKey && enterSends) {
         e.preventDefault();
         handleSend();
       }
     },
-    [handleSend, enterSends]
+    [handleSend, enterSends, suggestions, suggestionIndex, text]
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setText(e.target.value);
+      setSuggestionIndex(0);
+      if (e.target.value.startsWith('/')) setSlashLoaded(true);
       adjustHeight();
     },
     [adjustHeight]
@@ -311,6 +423,25 @@ export function MessageComposer({
       });
     },
     [text, adjustHeight]
+  );
+
+  // Append a line (e.g. a product with its price) to the draft on its own
+  // line, then focus the end so the rep can finish the sentence.
+  const insertLine = useCallback(
+    (line: string) => {
+      setText((prev) =>
+        prev && !/\s$/.test(prev) ? `${prev}\n${line}` : `${prev}${line}`
+      );
+      requestAnimationFrame(() => {
+        adjustHeight();
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(el.value.length, el.value.length);
+        }
+      });
+    },
+    [adjustHeight]
   );
 
   // Ask the AI assistant for a suggested reply and drop it into the
@@ -414,17 +545,26 @@ export function MessageComposer({
   // A picked quick reply: text fills the composer; interactive opens the
   // builder pre-filled so the agent can tweak before sending.
   const handlePickQuickReply = useCallback(
-    (qr: QuickReply) => {
+    (qr: QuickReply, replaceDraft = false) => {
       setQuickReplyOpen(false);
       if (qr.kind === 'interactive' && qr.interactive_payload) {
+        if (replaceDraft) setText('');
         openInteractiveBuilder(qr.interactive_payload);
         return;
       }
-      const body = qr.content_text ?? '';
+      const body = renderPlaceholders(
+        qr.content_text ?? '',
+        placeholderValues ?? {}
+      );
       // Separate the snippet from any existing draft with a newline so the
       // words don't run together ("Thanks" + "we'll…" → "Thankswe'll…").
+      // A "/shortcut" pick replaces the slash command itself.
       setText((prev) =>
-        prev && !/\s$/.test(prev) ? `${prev}\n${body}` : `${prev}${body}`
+        replaceDraft
+          ? body
+          : prev && !/\s$/.test(prev)
+            ? `${prev}\n${body}`
+            : `${prev}${body}`
       );
       requestAnimationFrame(() => {
         adjustHeight();
@@ -435,8 +575,11 @@ export function MessageComposer({
         }
       });
     },
-    [openInteractiveBuilder, adjustHeight]
+    [openInteractiveBuilder, adjustHeight, placeholderValues]
   );
+  useEffect(() => {
+    pickQuickReplyRef.current = handlePickQuickReply;
+  }, [handlePickQuickReply]);
 
   // Upload a captured file to chat-media and stage it as a draft.
   const stageUpload = useCallback(
@@ -727,6 +870,78 @@ export function MessageComposer({
         </div>
       )}
 
+      {duplicateOf && (
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-500/10 px-3 py-2">
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            {t('duplicateNudge', {
+              time: new Date(duplicateOf.at).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+            })}
+          </p>
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setDuplicateOf(null)}
+            >
+              {t('duplicateCancel')}
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => void handleSend()}
+            >
+              {t('duplicateSendAnyway')}
+            </Button>
+          </div>
+        </div>
+      )}
+      {!duplicateOf && burstLength >= 2 && !sessionExpired && (
+        <p
+          role="status"
+          className="mb-2 rounded-lg bg-muted px-3 py-1.5 text-xs text-muted-foreground"
+        >
+          {t('burstNudge', { count: burstLength })}
+        </p>
+      )}
+      {suggestions.length > 0 && (
+        <ul
+          role="listbox"
+          aria-label={t('quickReplies')}
+          className="mb-2 overflow-hidden rounded-lg border border-border bg-popover shadow-sm"
+        >
+          {suggestions.map((qr, i) => (
+            <li key={qr.id} role="option" aria-selected={i === suggestionIndex}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handlePickQuickReply(qr, true)}
+                className={cn(
+                  'flex w-full items-baseline gap-2 px-3 py-1.5 text-left text-sm',
+                  i === suggestionIndex ? 'bg-muted' : 'hover:bg-muted/60'
+                )}
+              >
+                {qr.shortcut ? (
+                  <code className="shrink-0 text-xs text-primary">
+                    /{qr.shortcut}
+                  </code>
+                ) : null}
+                <span className="shrink-0 font-medium">{qr.title}</span>
+                <span className="min-w-0 truncate text-xs text-muted-foreground">
+                  {qr.content_text}
+                </span>
+              </button>
+            </li>
+          ))}
+          <li className="border-t border-border px-3 py-1 text-[10px] text-muted-foreground">
+            {t('slashHint')}
+          </li>
+        </ul>
+      )}
+
       {/* Hidden file inputs driven by the attach menu. */}
       <input
         ref={imageInputRef}
@@ -873,6 +1088,10 @@ export function MessageComposer({
                 <Zap className="mr-2 h-4 w-4" />
                 {t('quickReplies')}
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setProductSearchOpen(true)}>
+                <Package className="mr-2 h-4 w-4" />
+                {t('productSearch')}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -998,6 +1217,11 @@ export function MessageComposer({
         open={quickReplyOpen}
         onOpenChange={setQuickReplyOpen}
         onPick={handlePickQuickReply}
+      />
+      <ProductSearchDialog
+        open={productSearchOpen}
+        onOpenChange={setProductSearchOpen}
+        onPick={insertLine}
       />
     </div>
   );

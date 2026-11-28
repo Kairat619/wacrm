@@ -203,7 +203,8 @@ export function MessageThread({
   const tTimer = useTranslations("inbox.sessionTimer");
   const tQuote = useTranslations("inbox.replyQuote");
 
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const costNudges = profile?.beta_features?.includes("cost-nudges") ?? false;
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1506,6 +1507,12 @@ export function MessageThread({
         onOpenTemplates={handleOpenTemplates}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
+        placeholderValues={{
+          name: contact.name || null,
+          agent: profile?.full_name || null,
+        }}
+        recentMessages={messages}
+        costNudges={costNudges}
       />
 
       <TemplatePicker

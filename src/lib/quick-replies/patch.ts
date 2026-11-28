@@ -1,5 +1,6 @@
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { getT } from '@/lib/i18n/translate'
+import { normalizeLanguage, normalizeShortcut } from './fields'
 
 const t = getT('Api')
 
@@ -46,6 +47,13 @@ export function resolveQuickReplyPatch(
     if ('interactive_payload' in body) {
       update.interactive_payload = body.interactive_payload ?? null
     }
+  }
+
+  if ('language' in body) update.language = normalizeLanguage(body.language)
+  if ('shortcut' in body) {
+    const shortcut = normalizeShortcut(body.shortcut)
+    if (!shortcut.ok) return { ok: false, error: t('quickReplies.shortcutInvalid') }
+    update.shortcut = shortcut.value
   }
 
   const merged = { ...stored, ...update }

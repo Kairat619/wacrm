@@ -3,6 +3,8 @@ import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/acco
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { getT } from '@/lib/i18n/translate'
+import { normalizeLanguage, normalizeShortcut } from '@/lib/quick-replies/fields'
+import { isUniqueViolation } from '@/lib/contacts/dedupe'
 
 const t = getT('Api')
 
@@ -43,6 +45,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: t('quickReplies.titleRequired') }, { status: 400 })
   }
 
+  const shortcut = normalizeShortcut(body.shortcut)
+  if (!shortcut.ok) {
+    return NextResponse.json({ error: t('quickReplies.shortcutInvalid') }, { status: 400 })
+  }
+
   let content_text: string | null = null
   let interactive_payload: unknown = null
 
@@ -72,10 +79,15 @@ export async function POST(request: Request) {
       kind,
       content_text,
       interactive_payload,
+      language: normalizeLanguage(body.language),
+      shortcut: shortcut.value,
     })
     .select()
     .single()
 
+  if (error && isUniqueViolation(error)) {
+    return NextResponse.json({ error: t('quickReplies.shortcutTaken') }, { status: 409 })
+  }
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
